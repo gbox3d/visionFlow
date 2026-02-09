@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "visionflow"
+version = "0.1.0"
+description = "Realtime vision pipeline (camera → processors → render)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "mediapipe>=0.10.32",
+    "numpy>=1.26,<3",
+    "opencv-python>=4.8",
+    "psutil>=7.2.2",
+    "pygame>=2.5",
+    "python-dotenv>=1.2.1",
+]
+
+[project.scripts]
+visionflow = "visionflow.main:main"
+vf-camera-simple = "visionflow.sample.camera.simple:main"
+vf-camera-dual = "visionflow.sample.camera.dual_cam:main"
+vf-camera-list = "visionflow.sample.camera.list_cameras:main"
+vf-camera-resolutions = "visionflow.sample.camera.list_resolutions:main"
+vf-face-detect = "visionflow.sample.face_detection.simple:main"
+vf-face-landmark = "visionflow.sample.face_detection.simple_landmark:main"
+vf-face-3d = "visionflow.sample.face_detection.transform_3d:main"
+vf-pose = "visionflow.sample.pose.simple:main"
+vf-detect-test = "visionflow.sample.detect_test:main"
+
+[dependency-groups]
+dev = [
+    "pyinstaller>=6.18.0",
+]
