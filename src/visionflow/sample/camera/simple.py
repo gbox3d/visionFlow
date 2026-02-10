@@ -36,12 +36,14 @@ class Application:
     def __init__(
         self,
         camera_id: int = 0,
+        device_path: str | None = None,
         width: int = 640,
         height: int = 480,
         max_fail: int = 60,
         use_dshow: bool = True,
     ):
         self.camera_id = camera_id
+        self.device_path = device_path
         self.width = width
         self.height = height
         self.max_fail = max_fail
@@ -55,6 +57,7 @@ class Application:
             bus=self.bus,
             out_topic="frame/raw",
             camera_id=self.camera_id,
+            device_path=self.device_path,
             request_width=self.width,
             request_height=self.height,
             max_fail=self.max_fail,
@@ -172,9 +175,19 @@ class Application:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="VisionFlow standard camera renderer"
+        description=(
+            "VisionFlow standard camera renderer\n\n"
+            "카메라 지정 방법:\n"
+            "  --camera-id 0            인덱스 기반 (기본)\n"
+            "  --device-path '\\\\?\\usb#vid_...'  device path 기반 (안정적)\n\n"
+            "device path는 vf-camera-list 로 확인할 수 있습니다."
+        ),
+        formatter_class=argparse.RawTextHelpFormatter,
     )
-    parser.add_argument("--camera-id", type=int, default=0)
+    parser.add_argument("--camera-id", type=int, default=0,
+                        help="카메라 인덱스 (기본값: 0)")
+    parser.add_argument("--device-path", type=str, default=None,
+                        help="카메라 device path (지정 시 camera-id보다 우선)")
     parser.add_argument("--width", type=int, default=640)
     parser.add_argument("--height", type=int, default=480)
     parser.add_argument("--max-fail", type=int, default=60)
@@ -184,6 +197,7 @@ def main():
 
     app = Application(
         camera_id=args.camera_id,
+        device_path=args.device_path,
         width=args.width,
         height=args.height,
         max_fail=args.max_fail,

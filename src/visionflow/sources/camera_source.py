@@ -15,6 +15,7 @@ class CameraSource:
     카메라 캡처 전용 소스
     - 프레임을 out_topic으로 계속 publish
     - read 실패 누적 시 자동 재연결
+    - device_path 지정 시 path 기반으로 카메라를 식별하여 연결
     """
 
     def __init__(
@@ -22,6 +23,7 @@ class CameraSource:
         bus: TopicBus,
         out_topic: str = "frame/raw",
         camera_id: int = 0,
+        device_path: Optional[str] = None,
         request_width: int = 640,
         request_height: int = 480,
         max_fail: int = 60,
@@ -33,13 +35,28 @@ class CameraSource:
         self.bus = bus
         self.out_topic = out_topic
 
-        self.camera_id = int(camera_id)
+        self.device_path = device_path
         self.request_width = int(request_width)
         self.request_height = int(request_height)
 
         self.max_fail = int(max_fail)
         self.reconnect_sleep_s = float(reconnect_sleep_s)
         self.use_dshow = bool(use_dshow)
+
+        # device_path가 지정된 경우 path → index 해상
+        if self.device_path:
+            resolved = self._resolve_index_from_path(self.device_path)
+            if resolved is not None:
+                self.camera_id = resolved
+            else:
+                print(
+                    f"[CameraSource] device_path 해상 실패, "
+                    f"camera_id={camera_id} 사용: {self.device_path}"
+                )
+                self.camera_id = int(camera_id)
+        else:
+            self.camera_id = int(camera_id)
+
         self.source_id = source_id or f"camera{self.camera_id}"
 
         self._cap: Optional[cv2.VideoCapture] = None
@@ -59,6 +76,51 @@ class CameraSource:
 
         if quiet_opencv_log:
             self._suppress_opencv_warnings()
+
+    def _resolve_index_from_path(self, device_path: str) -> Optional[int]:
+        """
+        device_path를 기반으로 현재 시스템의 OpenCV camera index를 찾는다.
+        cv2-enumerate-cameras로 전체 디바이스를 열거한 뒤,
+        path의 핵심 부분(GUID 앞까지)을 비교하여 매칭한다.
+
+        Returns:
+            매칭된 camera index (int) 또는 None
+        """
+        try:
+            from cv2_enumerate_cameras import enumerate_cameras
+        except ImportError:
+            print("[CameraSource] cv2-enumerate-cameras 패키지가 필요합니다")
+            return None
+
+        # path에서 GUID 이전의 핵심 식별 부분 추출
+        # 예: \\?\usb#vid_1bcf&pid_2284&mi_00#b&2f4f0816&0&0000#{...}\global
+        #   → \\?\usb#vid_1bcf&pid_2284&mi_00#b&2f4f0816&0&0000
+        def _path_key(p: str) -> str:
+            return p.split("#{")[0].lower() if "#{" in p else p.lower()
+
+        target_key = _path_key(device_path)
+        prefer_backend = cv2.CAP_DSHOW if self.use_dshow else cv2.CAP_MSMF
+
+        candidates = []
+        for cam in enumerate_cameras():
+            if cam.path and _path_key(cam.path) == target_key:
+                candidates.append(cam)
+
+        if not candidates:
+            return None
+
+        # 선호 backend에 맞는 것 우선 선택
+        for cam in candidates:
+            if cam.index >= prefer_backend and cam.index < prefer_backend + 100:
+                return cam.index - prefer_backend
+
+        # 못 찾으면 첫 번째 것에서 index 추출
+        cam = candidates[0]
+        if cam.index >= cv2.CAP_MSMF:
+            return cam.index - cv2.CAP_MSMF
+        elif cam.index >= cv2.CAP_DSHOW:
+            return cam.index - cv2.CAP_DSHOW
+        return cam.index
 
     def _suppress_opencv_warnings(self):
         try:
@@ -124,6 +186,18 @@ class CameraSource:
     def _reconnect(self) -> None:
         self._release()
         time.sleep(self.reconnect_sleep_s)
+
+        # device_path가 있으면 재연결 시마다 index를 재해상
+        # (USB 재연결 등으로 index가 바뀌었을 수 있음)
+        if self.device_path:
+            resolved = self._resolve_index_from_path(self.device_path)
+            if resolved is not None and resolved != self.camera_id:
+                print(
+                    f"[CameraSource] device_path 재해상: "
+                    f"id {self.camera_id} → {resolved}"
+                )
+                self.camera_id = resolved
+
         ok = self._open()
         if ok:
             print(
