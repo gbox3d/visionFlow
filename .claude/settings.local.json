@@ -7,7 +7,21 @@
       "Bash(uv build:*)",
       "WebFetch(domain:github.com)",
       "WebFetch(domain:pypi.org)",
-      "WebFetch(domain:raw.githubusercontent.com)"
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(python:*)",
+      "Bash(pip install:*)",
+      "Bash(dir:*)",
+      "Bash(nvidia-smi:*)",
+      "Bash(C:/works/miso_robot_ai/NeuroFlow/.venv/Scripts/pip.exe install nvidia-cublas-cu12 nvidia-cudnn-cu12)",
+      "Bash(ls:*)",
+      "Bash(\"C:/works/miso_robot_ai/NeuroFlow/.venv/Scripts/python.exe\" -m pip install:*)",
+      "Bash(\"C:/works/miso_robot_ai/NeuroFlow/.venv/Scripts/python.exe\" -c \"import sys; print\\(sys.executable, sys.version\\)\")",
+      "Bash(uv pip install:*)",
+      "Bash(\"C:/works/miso_robot_ai/NeuroFlow/.venv/Scripts/python.exe\" -c \"\nimport importlib.util, pathlib\nspec = importlib.util.find_spec\\(''nvidia.cublas''\\)\nif spec:\n    pkg_dir = pathlib.Path\\(spec.submodule_search_locations[0]\\)\n    print\\(''cublas dir:'', pkg_dir\\)\n    for f in pkg_dir.rglob\\(''*.dll''\\):\n        print\\('' '', f\\)\nelse:\n    print\\(''nvidia.cublas not found''\\)\n\")",
+      "Bash(\"C:/works/miso_robot_ai/NeuroFlow/.venv/Scripts/python.exe\" -c:*)",
+      "Bash(\"C:/works/miso_robot_ai/NeuroFlow/.venv/Scripts/python.exe\":*)",
+      "Bash(\"C:/works/miso_robot_ai/NeuroFlow/.venv/Scripts/python.exe\" -c \"\nimport sys; sys.path.insert\\(0, ''src''\\)\nfrom voiceFlow.processors.whisper_asr import WhisperAsrProcessor\nimport numpy as np\n\nproc = WhisperAsrProcessor\\(model_size=''tiny'', device=''cuda'', compute_type=''float16''\\)\n\n# 1kHz 사인파 3초 \\(무음이 아닌 테스트 데이터\\)\nt = np.linspace\\(0, 3, 16000*3, dtype=np.float32\\)\naudio = \\(np.sin\\(2 * np.pi * 440 * t\\) * 0.3\\).astype\\(np.float32\\)\n\nresult = proc.process\\(audio, samplerate=16000, seq=1, source_id=''test''\\)\nif result:\n    print\\(f''Text: {result.text}''\\)\n    print\\(f''Lang: {result.language}''\\)\n    print\\(f''Segments: {len\\(result.segments\\)}''\\)\nelse:\n    print\\(''No speech detected \\(expected for sine wave\\)''\\)\nproc.close\\(\\)\nprint\\(''DONE''\\)\n\")",
+      "Bash(\"C:/works/miso_robot_ai/NeuroFlow/.venv/Scripts/python.exe\" -c \"\nimport sys; sys.path.insert\\(0, ''src''\\)\nfrom voiceFlow.processors.whisper_asr import WhisperAsrProcessor\nimport numpy as np\n\nproc = WhisperAsrProcessor\\(model_size=''large-v3'', device=''cuda'', compute_type=''float16''\\)\n\n# 테스트: 사인파\nt = np.linspace\\(0, 3, 16000*3, dtype=np.float32\\)\naudio = \\(np.sin\\(2 * np.pi * 440 * t\\) * 0.3\\).astype\\(np.float32\\)\n\nresult = proc.process\\(audio, samplerate=16000, seq=1, source_id=''test''\\)\nif result:\n    print\\(f''Text: {result.text}''\\)\nelse:\n    print\\(''No speech \\(OK for sine wave\\)''\\)\nproc.close\\(\\)\nprint\\(''large-v3 CUDA OK''\\)\n\")"
     ]
   }
 }

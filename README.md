@@ -149,6 +149,45 @@ src/visionflow/
 - OpenCV >= 4.8
 - Pygame >= 2.5
 
+## voiceFlow ASR (miso_stt)
+
+`voiceFlow` ASR는 `miso_stt`를 벤더링해 3개 백엔드를 지원합니다.
+
+- `ct2`
+- `hf_generate`
+- `hf_pipeline`
+
+실행:
+
+```bash
+uv run python -m voiceFlow.sample.asr_realtime
+```
+
+UI에서 다음을 선택할 수 있습니다.
+- backend
+- model size
+- model path (optional)
+
+모델 지정 우선순위:
+1. model path
+2. model name(alias/HF ID)
+
+CUDA 정책:
+- PyTorch CUDA wheel 경로(`pytorch-cu128`)를 사용합니다.
+- `nvidia-cublas-cu12`, `nvidia-cudnn-cu12` 직접 의존은 제거했습니다.
+
+운영 가이드:
+- 의존성/락 파일 반영 후 `uv sync`로 환경을 재동기화하세요.
+- 락 업데이트가 필요하면 `uv lock` 후 `uv sync`를 권장합니다.
+
+HF LoRA 주의:
+- adapter-only 경로는 지원하지 않습니다.
+- 병합된 checkpoint 디렉토리를 model path로 지정하세요.
+
+백엔드 가이드:
+- `hf_generate`, `hf_pipeline`: LoRA/파인튜닝 확장 대비 권장
+- `ct2`: 빠른 추론에 유리, GPU 초기화 실패 시 CPU fallback이 자동 적용될 수 있음
+
 ## Keyboard Controls (detect_test)
 
 | Key | Action |

@@ -3,7 +3,50 @@
 from __future__ import annotations
 
 import importlib
+import os
 import sys
+
+# ---------------------------------------------------------------------------
+# NVIDIA CUDA/cuDNN Library patch for windows
+# ---------------------------------------------------------------------------
+def _add_nvidia_libs_to_path():
+    """
+    nvidia-cublas-cu12, nvidia-cudnn-cu12 패키지가 설치되어 있다면
+    DLL 경로를 PATH에 추가하여 ctranslate2가 찾을 수 있게 함.
+    """
+    if sys.platform != "win32":
+        return
+
+    import glob
+    import site
+
+    # site-packages 경로들 탐색
+    site_packages = site.getsitepackages()
+    site_packages.append(site.getusersitepackages())
+    
+    libs_to_add = [
+        "nvidia/cublas/bin",   # nvidia-cublas-cu12
+        "nvidia/cudnn/bin",    # nvidia-cudnn-cu12
+    ]
+
+    added_paths = []
+    
+    for sp in site_packages:
+        if not os.path.exists(sp):
+            continue
+        
+        for lib_subpath in libs_to_add:
+            # 예: .../site-packages/nvidia/cublas/bin
+            lib_path = os.path.join(sp, os.path.normpath(lib_subpath))
+            if os.path.isdir(lib_path) and lib_path not in os.environ["PATH"]:
+                os.environ["PATH"] = lib_path + os.pathsep + os.environ["PATH"]
+                added_paths.append(lib_path)
+
+    if added_paths:
+        print(f"[System] Added NVIDIA libs to PATH: {len(added_paths)} detected")
+
+
+_add_nvidia_libs_to_path()
 
 
 SAMPLES = [
