@@ -21,5 +21,15 @@
             "console": "integratedTerminal",
             "justMyCode": true
         },
+        {
+            "name": "neuroflow:audiomi_asr_realtime",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "voiceFlow.sample.audiomi_asr_realtime",
+            "cwd": "${workspaceFolder}",
+            "envFile": "${workspaceFolder}/.env",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
     ]
 }
