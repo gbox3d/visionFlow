@@ -8,6 +8,7 @@ import cv2
 
 from visionflow.pipeline.bus import TopicBus
 from visionflow.pipeline.packet import FramePacket
+from visionflow.utils.etc import normalize_device_path_key
 
 
 class CameraSource:
@@ -92,18 +93,12 @@ class CameraSource:
             print("[CameraSource] cv2-enumerate-cameras 패키지가 필요합니다")
             return None
 
-        # path에서 GUID 이전의 핵심 식별 부분 추출
-        # 예: \\?\usb#vid_1bcf&pid_2284&mi_00#b&2f4f0816&0&0000#{...}\global
-        #   → \\?\usb#vid_1bcf&pid_2284&mi_00#b&2f4f0816&0&0000
-        def _path_key(p: str) -> str:
-            return p.split("#{")[0].lower() if "#{" in p else p.lower()
-
-        target_key = _path_key(device_path)
+        target_key = normalize_device_path_key(device_path)
         prefer_backend = cv2.CAP_DSHOW if self.use_dshow else cv2.CAP_MSMF
 
         candidates = []
         for cam in enumerate_cameras():
-            if cam.path and _path_key(cam.path) == target_key:
+            if cam.path and normalize_device_path_key(cam.path) == target_key:
                 candidates.append(cam)
 
         if not candidates:

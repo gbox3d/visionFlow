@@ -200,6 +200,23 @@ HF LoRA 주의:
 - adapter-only 경로는 지원하지 않습니다.
 - 병합된 checkpoint 디렉토리를 model path로 지정하세요.
 
+통합 데모(`main.py`, pygame) 해상도 튜닝:
+
+```env
+# 우선 사용 (권장): WxH 포맷
+CAMERA_RESOLUTION=640x480
+
+# fallback (CAMERA_RESOLUTION이 비어있을 때)
+CAMERA_WIDTH=640
+CAMERA_HEIGHT=480
+
+# detection counts
+MAX_FACE=1
+MAX_POSE=1
+```
+
+`face + pose` 동시 추론에서는 해상도를 높일수록 FPS가 크게 떨어질 수 있습니다.
+
 백엔드 가이드:
 - `hf_generate`, `hf_pipeline`: LoRA/파인튜닝 확장 대비 권장
 - `ct2`: 빠른 추론에 유리, GPU 초기화 실패 시 CPU fallback이 자동 적용될 수 있음

@@ -17,7 +17,6 @@ DO NOT edit this block.
 
 from __future__ import annotations
 
-import os
 import sys
 import time
 import threading
@@ -48,50 +47,18 @@ from PySide6.QtWidgets import (
 from visionflow.pipeline.bus import TopicBus
 from voiceFlow.sources.microphone_source import MicrophoneSource
 from voiceFlow.processors.miso_stt_asr import MisoSttAsrProcessor
+from voiceFlow.utils.env import (
+    env_bool as _get_env_bool,
+    env_float as _get_env_float,
+    env_int as _get_env_int,
+    env_lang as _get_env_optional_language,
+    env_str as _get_env_str,
+)
 from voiceFlow.workers.asr_worker import AsrWorker
 from voiceFlow.pipeline.packet import AsrResultPacket
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 load_dotenv(PROJECT_ROOT / ".env", override=False)
-
-
-def _get_env_str(name: str, default: str) -> str:
-    v = os.getenv(name)
-    return v if v is not None and v != "" else default
-
-
-def _get_env_int(name: str, default: int) -> int:
-    v = os.getenv(name)
-    if not v:
-        return default
-    try:
-        return int(v)
-    except ValueError:
-        return default
-
-
-def _get_env_float(name: str, default: float) -> float:
-    v = os.getenv(name)
-    if not v:
-        return default
-    try:
-        return float(v)
-    except ValueError:
-        return default
-
-
-def _get_env_bool(name: str, default: bool) -> bool:
-    v = os.getenv(name)
-    if v is None or v == "":
-        return default
-    return v.strip().lower() in ("1", "true", "yes", "y", "on")
-
-
-def _get_env_optional_language(name: str, default: str = "auto") -> str | None:
-    v = _get_env_str(name, default).strip().lower()
-    if v in ("", "none", "auto"):
-        return None
-    return v
 
 
 ENV_STT_BACKEND = _get_env_str("VOICEFLOW_STT_BACKEND", "ct2")

@@ -21,9 +21,6 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 import cv2
 
-import numpy as np
-import pygame
-
 
 import sys
 import os
@@ -38,6 +35,41 @@ def resource_path(relative_path):
         base_path = os.path.abspath(".")
 
     return os.path.join(base_path, relative_path)
+
+
+def parse_resolution(value: str) -> Optional[Tuple[int, int]]:
+    """
+    Parse resolution text like "1280x720" or "1280*720".
+    Returns (width, height) or None when input is invalid.
+    """
+    raw = (value or "").strip().lower().replace(" ", "")
+    if not raw:
+        return None
+
+    sep = "x" if "x" in raw else ("*" if "*" in raw else None)
+    if sep is None:
+        return None
+
+    left, right = raw.split(sep, 1)
+    try:
+        width = int(left)
+        height = int(right)
+    except ValueError:
+        return None
+
+    if width <= 0 or height <= 0:
+        return None
+    return width, height
+
+
+def normalize_device_path_key(path: str) -> str:
+    """
+    Normalize Windows camera path to a stable key by dropping GUID suffix.
+    """
+    normalized = (path or "").strip().lower()
+    if "#{" in normalized:
+        return normalized.split("#{")[0]
+    return normalized
 
 # -------------------------
 # Dataclasses

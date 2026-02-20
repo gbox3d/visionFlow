@@ -29,6 +29,7 @@ class MpFaceDetectorAsyncWorker:
         out_topic: str,
         model_path: str = 'models/blaze_face_short_range.tflite',
         model_options: Dict[str, Any] = None,
+        max_faces: int = 1,
         name: str = "mp-face-live",
     ):
         self.bus = bus
@@ -36,6 +37,7 @@ class MpFaceDetectorAsyncWorker:
         self.out_topic = out_topic
         self.model_path = model_path
         self.model_options = dict(model_options) if model_options is not None else {}
+        self.max_faces = max(1, int(max_faces))
         self.name = name
 
         self._running = False
@@ -71,28 +73,34 @@ class MpFaceDetectorAsyncWorker:
             if raw is None:
                 return
 
-            best = None
-            best_area = 0
+            faces: list[tuple[int, int, int, int, float, int]] = []
             for det in result.detections:
                 bbox = det.bounding_box
                 score = det.categories[0].score
                 x, y, bw, bh = bbox.origin_x, bbox.origin_y, bbox.width, bbox.height
                 area = bw * bh
-                if area > best_area:
-                    best_area = area
-                    best = (x, y, bw, bh, float(score))
+                faces.append((x, y, bw, bh, float(score), int(area)))
 
-            if best is None:
+            if not faces:
                 return
 
-            x, y, bw, bh, score = best
+            faces.sort(key=lambda item: item[5], reverse=True)
+            selected = faces[: self.max_faces]
+            x, y, bw, bh, score, _ = selected[0]
+            face_rois = [(fx, fy, fw, fh, fs) for fx, fy, fw, fh, fs, _ in selected]
             out_pkt = FramePacket(
                 image=raw.image,
                 ts_ms=raw.ts_ms,
                 seq=raw.seq,
                 source_id=raw.source_id,
                 roi=(x, y, bw, bh),
-                meta={**raw.meta, "face_score": score, "infer_fps": self._infer_fps},
+                meta={
+                    **raw.meta,
+                    "face_score": score,
+                    "face_count": len(face_rois),
+                    "face_rois": face_rois,
+                    "infer_fps": self._infer_fps,
+                },
             )
             self.bus.publish(self.out_topic, out_pkt)
 

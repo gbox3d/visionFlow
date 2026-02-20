@@ -19,7 +19,6 @@ Rules:
 
 from __future__ import annotations
 
-import os
 import sys
 import time
 import threading
@@ -52,44 +51,18 @@ from PySide6.QtWidgets import (
 from visionflow.pipeline.bus import TopicBus
 from voiceFlow.sources.audiomi_source import AudioMiSource, CMD_LOOPBACK, CMD_MIC
 from voiceFlow.processors.miso_stt_asr import MisoSttAsrProcessor
+from voiceFlow.utils.env import (
+    env_bool as _env_bool,
+    env_float as _env_float,
+    env_int as _env_int,
+    env_lang as _env_lang,
+    env_str as _env_str,
+)
 from voiceFlow.workers.accumulate_asr_worker import AccumulateAsrWorker
 from voiceFlow.pipeline.packet import AsrResultPacket
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 load_dotenv(PROJECT_ROOT / ".env", override=False)
-
-
-def _env_str(name: str, default: str) -> str:
-    v = os.getenv(name)
-    return v if v else default
-
-
-def _env_int(name: str, default: int) -> int:
-    v = os.getenv(name)
-    try:
-        return int(v) if v else default
-    except ValueError:
-        return default
-
-
-def _env_float(name: str, default: float) -> float:
-    v = os.getenv(name)
-    try:
-        return float(v) if v else default
-    except ValueError:
-        return default
-
-
-def _env_bool(name: str, default: bool) -> bool:
-    v = os.getenv(name)
-    if not v:
-        return default
-    return v.strip().lower() in ("1", "true", "yes", "y", "on")
-
-
-def _env_lang(name: str, default: str = "auto") -> str | None:
-    v = _env_str(name, default).strip().lower()
-    return None if v in ("", "none", "auto") else v
 
 
 ENV_HOST       = _env_str("AUDIOMI_HOST", "127.0.0.1")

@@ -23,6 +23,12 @@
 - `sample/audiomi_asr_realtime.py`
   - audioMi 실시간 누적 ASR UI
   - 모델명/캐시 루트/워밍업 진행률/queue/infer 시간 표시
+- `utils/env.py`
+  - `.env` 파싱 공용 유틸 (`env_str`, `env_int`, `env_bool`, `env_lang`, `env_*_any`)
+- `utils/audio_device.py`
+  - 마이크 디바이스 파싱/카메라 path 기반 마이크 매칭 유틸
+- `utils/text.py`
+  - UI 텍스트 줄바꿈 공용 유틸 (`wrap_text`)
 
 ## 실행
 
@@ -35,6 +41,8 @@ uv run python -m voiceFlow.sample.audiomi_asr_realtime
 ```bash
 uv run python -m voiceFlow.sample.asr_realtime
 ```
+
+두 샘플(`asr_realtime.py`, `audiomi_asr_realtime.py`)은 공통으로 `voiceFlow.utils.env`를 사용합니다.
 
 ## 환경 변수 (.env)
 
@@ -80,3 +88,31 @@ UI에는 시작 후 아래 정보가 표시됩니다.
 - 성공 추론: `logs/<timestamp>.wav` + `logs/<timestamp>.txt`
 - 필터 실패: `logs/<timestamp>_FAIL.wav` + `logs/<timestamp>_FAIL.txt`
 - 실패 이력: `logs/filter_failures.log`
+
+## 디바이스 리스팅 (배포/개발 공용)
+
+마이크/카메라 디바이스 확인용 도구:
+
+- 콘솔: `device_lister.py`
+- UI: `device_lister_ui.py`
+
+개발 환경 실행:
+
+```bash
+uv run python device_lister.py
+uv run python device_lister_ui.py
+```
+
+배포 빌드:
+
+```powershell
+.\scripts\build_device_lister.ps1 -Clean
+.\scripts\build_device_lister_ui.ps1 -Clean
+```
+
+생성 결과:
+
+- `dist/device_lister/device_lister.exe`
+- `dist/device_lister_ui/device_lister_ui.exe`
+
+UI 버전에서는 카메라 path를 선택 후 `Copy Camera Path`로 클립보드에 복사할 수 있습니다.
