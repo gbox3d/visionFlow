@@ -102,7 +102,8 @@ ENV_STT_FP16 = _get_env_bool("VOICEFLOW_STT_FP16", True)
 ENV_STT_LANGUAGE = _get_env_optional_language("VOICEFLOW_STT_LANGUAGE", "auto")
 ENV_STT_TASK = _get_env_str("VOICEFLOW_STT_TASK", "transcribe")
 ENV_STT_BEAM_SIZE = _get_env_int("VOICEFLOW_STT_BEAM_SIZE", 5)
-ENV_STT_RMS_THRESHOLD = _get_env_float("VOICEFLOW_STT_RMS_THRESHOLD", 0.005)
+ENV_STT_TEMPERATURE = _get_env_float("VOICEFLOW_STT_TEMPERATURE", 0.0)
+ENV_STT_CT2_VAD_FILTER = _get_env_bool("VOICEFLOW_STT_CT2_VAD_FILTER", False)
 ENV_STT_CHUNK_SEC = _get_env_float("VOICEFLOW_STT_CHUNK_SEC", 3.0)
 ENV_STT_SAMPLERATE = _get_env_int("VOICEFLOW_STT_SAMPLERATE", 16000)
 
@@ -220,7 +221,7 @@ class AudioLevelBridge(QObject):
 class AsrResultBridge(QObject):
     """TopicBus("text/asr") → ASR 결과 Signal"""
 
-    asr_received = Signal(str, str, float, str)  # text, language, infer_ms, fallback_note
+    asr_received = Signal(str, str, float, str, str)  # text, language, infer_ms, fallback_note, model_source
 
     def __init__(self, bus: TopicBus, topic: str = "text/asr"):
         super().__init__()
@@ -255,7 +256,30 @@ class AsrResultBridge(QObject):
                     fallback_note = "CT2 GPU 실패 -> CPU fallback"
                     if reason:
                         fallback_note = f"{fallback_note} ({reason})"
-                self.asr_received.emit(pkt.text, pkt.language, infer_ms, fallback_note)
+                load_source = str(pkt.meta.get("load_source") or "").strip()
+                resolved_local_path = str(
+                    pkt.meta.get("resolved_local_path_abs")
+                    or pkt.meta.get("resolved_local_path")
+                    or ""
+                ).strip()
+                effective_model_path = str(
+                    pkt.meta.get("effective_model_path_abs")
+                    or pkt.meta.get("effective_model_path")
+                    or ""
+                ).strip()
+                cache_root = str(pkt.meta.get("cache_root_abs") or "").strip()
+                model_id = str(pkt.meta.get("model_id") or "").strip()
+                if resolved_local_path:
+                    model_source = f"{load_source}: {resolved_local_path}" if load_source else resolved_local_path
+                elif effective_model_path:
+                    model_source = f"{load_source}: {effective_model_path}" if load_source else effective_model_path
+                elif cache_root and model_id:
+                    model_source = f"{load_source}: {cache_root} ({model_id})" if load_source else f"{cache_root} ({model_id})"
+                elif model_id:
+                    model_source = f"{load_source}: {model_id}" if load_source else model_id
+                else:
+                    model_source = load_source
+                self.asr_received.emit(pkt.text, pkt.language, infer_ms, fallback_note, model_source)
 
 
 # ---------------------------------------------------------------------------
@@ -293,6 +317,7 @@ class AsrRealtimeWindow(QMainWindow):
         self._asr_bridge = AsrResultBridge(self._bus, "text/asr")
         self._audio_bridge.level_updated.connect(self._on_level)
         self._asr_bridge.asr_received.connect(self._on_asr_result)
+        self._model_source_note = ""
 
         self._build_ui()
 
@@ -426,6 +451,9 @@ class AsrRealtimeWindow(QMainWindow):
         model_path_raw = self._edit_model_path.text().strip()
         model_path = model_path_raw or None
         chunk_s = self._spin_chunk.value()
+        backend_kwargs = {"temperature": ENV_STT_TEMPERATURE}
+        if backend == "ct2":
+            backend_kwargs["vad_filter"] = ENV_STT_CT2_VAD_FILTER
 
         # UI 잠금
         self._combo_backend.setEnabled(False)
@@ -461,7 +489,7 @@ class AsrRealtimeWindow(QMainWindow):
                 language=ENV_STT_LANGUAGE,
                 task=ENV_STT_TASK,
                 beam_size=ENV_STT_BEAM_SIZE,
-                rms_threshold=ENV_STT_RMS_THRESHOLD,
+                backend_kwargs=backend_kwargs,
             )
 
             self._asr_worker = AsrWorker(
@@ -518,13 +546,18 @@ class AsrRealtimeWindow(QMainWindow):
     def _on_level(self, level: float) -> None:
         self._gauge.set_level(level)
 
-    def _on_asr_result(self, text: str, language: str, infer_ms: float, fallback_note: str) -> None:
+    def _on_asr_result(self, text: str, language: str, infer_ms: float, fallback_note: str, model_source: str) -> None:
         timestamp = time.strftime("%H:%M:%S")
         line = f"[{timestamp}] [{language}] ({infer_ms:.0f}ms) {text}"
         self._text_edit.append(line)
+        if model_source:
+            self._model_source_note = model_source
         if fallback_note:
             self._status_label.setText(f"모니터링 중 (주의): {fallback_note}")
             self._status_label.setStyleSheet("color: #fa0;")
+        elif self._model_source_note:
+            self._status_label.setText(f"모니터링 중 | model source: {self._model_source_note}")
+            self._status_label.setStyleSheet("color: #0a0;")
 
         # 자동 스크롤
         scrollbar = self._text_edit.verticalScrollBar()

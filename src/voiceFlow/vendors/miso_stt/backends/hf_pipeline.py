@@ -20,12 +20,20 @@ class PipelineTranscriber:
         model_path: str | None = None,
         device: str = "auto",
         fp16: bool = True,
+        temperature: float = 0.0,
     ):
         self.input_model_name = model_name
         self.requested_model_path = model_path
         self.requested_device = device
         self.requested_fp16 = fp16
-        generate_backend = GenerateTranscriber(model_name=model_name, model_path=model_path, device=device, fp16=fp16)
+        self.temperature = float(temperature)
+        generate_backend = GenerateTranscriber(
+            model_name=model_name,
+            model_path=model_path,
+            device=device,
+            fp16=fp16,
+            temperature=self.temperature,
+        )
         model_dtype = next(generate_backend.model.parameters()).dtype
         asr = pipeline(
             task="automatic-speech-recognition",
@@ -99,6 +107,8 @@ class PipelineTranscriber:
         task: str = "transcribe",
     ) -> tuple[str, list[Segment]]:
         generate_kwargs: dict[str, Any] = {}
+        generate_kwargs["temperature"] = self.temperature
+        generate_kwargs["do_sample"] = self.temperature > 0.0
         if language is not None:
             generate_kwargs["language"] = language
             generate_kwargs["task"] = task
@@ -147,6 +157,8 @@ class PipelineTranscriber:
             overlap_sec=overlap_sec,
         ):
             generate_kwargs: dict[str, Any] = {}
+            generate_kwargs["temperature"] = self.temperature
+            generate_kwargs["do_sample"] = self.temperature > 0.0
             if language is not None:
                 generate_kwargs["language"] = language
                 generate_kwargs["task"] = task

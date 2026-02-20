@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
 from typing import Any, Dict, Literal, Optional
 
 import numpy as np
@@ -22,7 +23,6 @@ class MisoSttAsrProcessor:
         language: str | None = None,
         task: str = "transcribe",
         beam_size: int = 5,
-        rms_threshold: float = 0.005,
         backend_kwargs: Optional[Dict[str, Any]] = None,
     ):
         self.backend = backend
@@ -33,7 +33,6 @@ class MisoSttAsrProcessor:
         self.language = language
         self.task = task
         self.beam_size = int(beam_size)
-        self.rms_threshold = float(rms_threshold)
         self.backend_kwargs = dict(backend_kwargs) if backend_kwargs else {}
 
         self._transcriber: WhisperTranscriber | None = None
@@ -89,6 +88,17 @@ class MisoSttAsrProcessor:
             )
         dt = time.time() - t0
         print(f"[MisoSttAsrProcessor] 모델 로딩 완료 ({dt:.1f}s)")
+        if self._transcriber is not None:
+            backend_obj = self._transcriber.backend
+            effective_model_path = getattr(backend_obj, "effective_model_path", None)
+            cache_root = getattr(backend_obj, "download_root", None) or getattr(backend_obj, "cache_dir", None)
+            model_id = getattr(backend_obj, "model_id", None)
+            if effective_model_path:
+                print(f"[MisoSttAsrProcessor] model path(abs): {Path(str(effective_model_path)).resolve()}")
+            if cache_root:
+                print(f"[MisoSttAsrProcessor] cache root(abs): {Path(str(cache_root)).resolve()}")
+            if model_id:
+                print(f"[MisoSttAsrProcessor] model id: {model_id}")
 
     def process(
         self,
@@ -106,8 +116,6 @@ class MisoSttAsrProcessor:
             audio_chunk = audio_chunk.astype(np.float32)
 
         rms = float(np.sqrt(np.mean(audio_chunk**2)))
-        if rms < self.rms_threshold:
-            return None
 
         text, segments = self._transcriber.transcribe_full_timeline(
             waveform=audio_chunk,
@@ -144,12 +152,31 @@ class MisoSttAsrProcessor:
             "ct2_fallback_cpu": self._ct2_fallback_cpu,
             "fallback_reason": self._ct2_fallback_reason,
         }
-        for key in ("load_source", "effective_model_path", "compute_type", "device", "model_id"):
-            if hasattr(backend_obj, key):
-                value = getattr(backend_obj, key)
-                if hasattr(value, "type"):
-                    value = value.type
-                meta[key] = value
+        for key in (
+            "load_source",
+            "effective_model_path",
+            "resolved_local_path",
+            "compute_type",
+            "device",
+            "model_id",
+            "download_root",
+            "cache_dir",
+        ):
+            value = self._backend_attr(backend_obj, key)
+            if value is None:
+                continue
+            if hasattr(value, "type"):
+                value = value.type
+            meta[key] = value
+        effective_model_path = meta.get("effective_model_path")
+        if effective_model_path:
+            meta["effective_model_path_abs"] = str(Path(str(effective_model_path)).resolve())
+        resolved_local_path = meta.get("resolved_local_path")
+        if resolved_local_path:
+            meta["resolved_local_path_abs"] = str(Path(str(resolved_local_path)).resolve())
+        cache_root = meta.get("download_root") or meta.get("cache_dir")
+        if cache_root:
+            meta["cache_root_abs"] = str(Path(str(cache_root)).resolve())
 
         return AsrResultPacket(
             text=text,
@@ -160,6 +187,38 @@ class MisoSttAsrProcessor:
             source_id=source_id,
             meta=meta,
         )
+
+    def warmup(self) -> None:
+        """모델을 미리 로딩해 스트림 수신 전에 초기화를 끝낸다."""
+        self._ensure_transcriber()
+
+    @staticmethod
+    def _backend_attr(backend_obj: Any, name: str) -> Any:
+        if hasattr(backend_obj, name):
+            return getattr(backend_obj, name)
+        nested = getattr(backend_obj, "backend", None)
+        if nested is not None and hasattr(nested, name):
+            return getattr(nested, name)
+        return None
+
+    def get_model_source_label(self) -> str:
+        """현재 로딩된 모델명을 UI 표시에 적합한 문자열로 반환."""
+        self._ensure_transcriber()
+        assert self._transcriber is not None
+        backend_obj = self._transcriber.backend
+
+        model_id = str(self._backend_attr(backend_obj, "model_id") or "").strip()
+        return model_id or self.model_name
+
+    def get_cache_root_abs(self) -> str:
+        """현재 백엔드의 캐시 루트 절대 경로를 반환한다."""
+        self._ensure_transcriber()
+        assert self._transcriber is not None
+        backend_obj = self._transcriber.backend
+        cache_root = self._backend_attr(backend_obj, "download_root") or self._backend_attr(backend_obj, "cache_dir")
+        if not cache_root:
+            return ""
+        return str(Path(str(cache_root)).resolve())
 
     def close(self) -> None:
         self._transcriber = None

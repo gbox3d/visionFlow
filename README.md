@@ -161,16 +161,32 @@ src/visionflow/
 
 ```bash
 uv run python -m voiceFlow.sample.asr_realtime
+uv run python -m voiceFlow.sample.audiomi_asr_realtime
 ```
 
 UI에서 다음을 선택할 수 있습니다.
 - backend
 - model size
 - model path (optional)
+- accumulate step / max window (audiomi 샘플)
 
 모델 지정 우선순위:
 1. model path
 2. model name(alias/HF ID)
+
+주요 환경 변수:
+- `VOICEFLOW_STT_TEMPERATURE` (기본 `0.0`)
+- `VOICEFLOW_STT_CT2_VAD_FILTER` (기본 `false`)
+- `ENABLE_LOGGING` (`true`일 때만 `logs/` 저장)
+
+`audiomi_asr_realtime` 누적 모드:
+- ingest/infer 스레드 분리로 수신과 추론 경로 분리
+- `step_s` 단위 청크 큐 누적 후 전체 버퍼 추론
+- `max_window_s` 초과 시 앞 청크 트림
+- 워밍업 진행률(`text/asr_status`)을 UI progress bar로 표시
+- 상태줄에 queue/infer 시간 표시
+- 모델명 + `cache root(abs)` 표시
+- 로깅 사용 시 추론 텍스트/오디오 쌍 저장(`logs/*.txt`, `logs/*.wav`)
 
 CUDA 정책:
 - PyTorch CUDA wheel 경로(`pytorch-cu128`)를 사용합니다.

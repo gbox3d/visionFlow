@@ -19,12 +19,24 @@ class CT2Transcriber:
         device: str = "auto",
         fp16: bool = True,
         beam_size: int = 5,
+        temperature: float = 0.0,
+        vad_filter: bool = True,
+        condition_on_previous_text: bool = False,
+        no_speech_threshold: float | None = None,
+        log_prob_threshold: float | None = None,
+        compression_ratio_threshold: float | None = None,
     ):
         self.input_model_name = model_name
         self.requested_model_path = str(Path(model_path).expanduser()) if model_path else None
         self.requested_device = device
         self.requested_fp16 = fp16
         self.beam_size = int(beam_size)
+        self.temperature = float(temperature)
+        self.vad_filter = bool(vad_filter)
+        self.condition_on_previous_text = bool(condition_on_previous_text)
+        self.no_speech_threshold = no_speech_threshold
+        self.log_prob_threshold = log_prob_threshold
+        self.compression_ratio_threshold = compression_ratio_threshold
         torch_device = get_device(device)
         compute_type = get_compute_type(torch_device, fp16=fp16)
 
@@ -97,13 +109,23 @@ class CT2Transcriber:
         language: str | None = "ko",
         task: str = "transcribe",
     ) -> tuple[str, list[Segment]]:
-        segments_gen, _info = self.model.transcribe(
-            audio=waveform,
-            language=language,
-            task=task,
-            beam_size=self.beam_size,
-            vad_filter=True,
-        )
+        transcribe_kwargs = {
+            "audio": waveform,
+            "language": language,
+            "task": task,
+            "beam_size": self.beam_size,
+            "temperature": self.temperature,
+            "vad_filter": self.vad_filter,
+            "condition_on_previous_text": self.condition_on_previous_text,
+        }
+        if self.no_speech_threshold is not None:
+            transcribe_kwargs["no_speech_threshold"] = float(self.no_speech_threshold)
+        if self.log_prob_threshold is not None:
+            transcribe_kwargs["log_prob_threshold"] = float(self.log_prob_threshold)
+        if self.compression_ratio_threshold is not None:
+            transcribe_kwargs["compression_ratio_threshold"] = float(self.compression_ratio_threshold)
+
+        segments_gen, _info = self.model.transcribe(**transcribe_kwargs)
 
         segments: list[Segment] = []
         for seg in segments_gen:
@@ -134,4 +156,10 @@ class CT2Transcriber:
         print(f"requested fp16:        {self.requested_fp16}")
         print(f"compute type:          {self.compute_type}")
         print(f"beam size:             {self.beam_size}")
+        print(f"temperature:           {self.temperature}")
+        print(f"vad filter:            {self.vad_filter}")
+        print(f"condition prev text:   {self.condition_on_previous_text}")
+        print(f"no speech threshold:   {self.no_speech_threshold}")
+        print(f"log prob threshold:    {self.log_prob_threshold}")
+        print(f"compression ratio thr: {self.compression_ratio_threshold}")
 

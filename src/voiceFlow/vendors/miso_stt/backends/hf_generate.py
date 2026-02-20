@@ -20,11 +20,13 @@ class GenerateTranscriber:
         model_path: str | None = None,
         device: str = "auto",
         fp16: bool = True,
+        temperature: float = 0.0,
     ):
         self.input_model_name = model_name
         self.requested_model_path = str(Path(model_path).expanduser()) if model_path else None
         self.requested_device = device
         self.requested_fp16 = fp16
+        self.temperature = float(temperature)
         torch_device = get_device(device)
         torch_dtype = get_dtype(torch_device, prefer_fp16=fp16)
 
@@ -118,6 +120,8 @@ class GenerateTranscriber:
         generate_kwargs = {
             "return_timestamps": True,
             "return_segments": True,
+            "temperature": self.temperature,
+            "do_sample": self.temperature > 0.0,
         }
         if language is not None:
             generate_kwargs["language"] = language
