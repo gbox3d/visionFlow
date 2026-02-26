@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 import threading
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 import numpy as np
 import sounddevice as sd
@@ -57,7 +57,9 @@ class MicrophoneSource:
         if status:
             print(f"[MicrophoneSource] Audio callback status: {status}")
 
-        if not self._running:
+        with self._lock:
+            running = self._running
+        if not running:
             return
 
         self._seq += 1
@@ -88,14 +90,26 @@ class MicrophoneSource:
 
     def _open_stream(self) -> bool:
         try:
-            self._stream = sd.InputStream(
+            stream = sd.InputStream(
                 samplerate=self.samplerate,
                 channels=self.channels,
                 blocksize=self.blocksize,
                 device=self.device,
                 callback=self._audio_callback,
             )
-            self._stream.start()
+            stream.start()
+            with self._lock:
+                if not self._running:
+                    try:
+                        stream.stop()
+                    except Exception:
+                        pass
+                    try:
+                        stream.close()
+                    except Exception:
+                        pass
+                    return False
+                self._stream = stream
             print(
                 f"[MicrophoneSource] 오디오 스트림 오픈 성공: "
                 f"장치={self.device if self.device is not None else '기본'} "
@@ -104,25 +118,41 @@ class MicrophoneSource:
             return True
         except Exception as e:
             print(f"[MicrophoneSource] 오디오 스트림 오픈 실패: {e}")
-            self._stream = None
+            with self._lock:
+                self._stream = None
             return False
 
     def _close_stream(self) -> None:
-        if self._stream:
-            self._stream.stop()
-            self._stream.close()
+        with self._lock:
+            stream = self._stream
             self._stream = None
-            print("[MicrophoneSource] 오디오 스트림 종료")
+
+        if stream is None:
+            return
+
+        try:
+            stream.stop()
+        except Exception as e:
+            print(f"[MicrophoneSource] 오디오 스트림 stop 실패(무시): {e}")
+
+        try:
+            stream.close()
+        except Exception as e:
+            print(f"[MicrophoneSource] 오디오 스트림 close 실패(무시): {e}")
+
+        print("[MicrophoneSource] 오디오 스트림 종료")
 
     def start(self) -> None:
-        if self._running:
-            return
-        self._running = True
+        with self._lock:
+            if self._running:
+                return
+            self._running = True
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
 
     def stop(self) -> None:
-        self._running = False
+        with self._lock:
+            self._running = False
         if self._thread:
             self._thread.join(timeout=2.0)
             self._thread = None
@@ -131,8 +161,22 @@ class MicrophoneSource:
 
     def _loop(self) -> None:
         fail = 0
-        while self._running:
-            if self._stream is None or not self._stream.active:
+        while True:
+            with self._lock:
+                running = self._running
+                stream = self._stream
+
+            if not running:
+                break
+
+            stream_active = False
+            if stream is not None:
+                try:
+                    stream_active = bool(stream.active)
+                except Exception:
+                    stream_active = False
+
+            if not stream_active:
                 self._close_stream()  # Ensure it's fully closed before attempting to reopen
                 if self._open_stream():
                     fail = 0  # Reset fail count on successful open
@@ -143,6 +187,8 @@ class MicrophoneSource:
                     if fail >= self.max_fail:
                         print("[MicrophoneSource] 스트림 연결 지속 실패 → 재시도 대기")
                         time.sleep(self.reconnect_sleep_s)
+                    else:
+                        time.sleep(0.05)
             else:
                 # Stream is active, just keep the thread alive
                 time.sleep(0.1)  # Small sleep to prevent busy-waiting

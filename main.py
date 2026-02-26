@@ -55,7 +55,6 @@ from visionflow.workers.mp_face_detector_async_worker import MpFaceDetectorAsync
 from visionflow.workers.mp_face_landmarker_async_worker import MpFaceLandmarkerAsyncWorker
 from visionflow.workers.mp_pose_landmarker_async_worker import MpPoseLandmarkerAsyncWorker
 
-from voiceFlow.utils.audio_device import parse_mic_device, resolve_mic_device_from_camera_path
 from voiceFlow.utils.env import (
     env_bool_any,
     env_float_any,
@@ -126,6 +125,7 @@ class DemoApplication:
 
         self._status_text = "대기 중"
         self._runtime_info = ""
+        self._asr_init_error = ""
 
         pygame.init()
         pygame.display.set_caption(self.APP_TITLE)
@@ -165,17 +165,25 @@ class DemoApplication:
         camera_id = env_int_any(("CAMERA_ID", "DEMO_CAMERA_ID"), 0)
         unified_path = env_str_any(("DEVICE_PATH", "DEMO_DEVICE_PATH"), "").strip()
         camera_path = unified_path or env_str_any(("CAMERA_DEVICE_PATH", "DEMO_CAMERA_DEVICE_PATH"), "").strip() or None
-        camera_res = parse_resolution(env_str_any(("CAMERA_RESOLUTION", "DEMO_CAMERA_RESOLUTION"), ""))
-        if camera_res is not None:
-            camera_width, camera_height = camera_res
+        camera_res = parse_resolution(
+            env_str_any(("CAMERA_RESOLUTION", "DEMO_CAMERA_RESOLUTION"), "1280x720")
+        )
+        if camera_res is None:
+            camera_width, camera_height = 1280, 720
         else:
-            camera_width = env_int_any(("CAMERA_WIDTH", "DEMO_CAMERA_WIDTH"), 640)
-            camera_height = env_int_any(("CAMERA_HEIGHT", "DEMO_CAMERA_HEIGHT"), 480)
+            camera_width, camera_height = camera_res
         camera_dshow = env_bool_any(("CAMERA_USE_DSHOW", "DEMO_CAMERA_USE_DSHOW"), True)
 
-        mic_device = parse_mic_device(env_str_any(("MIC_DEVICE", "DEMO_MIC_DEVICE"), ""))
-        if mic_device is None and camera_path:
-            mic_device = resolve_mic_device_from_camera_path(camera_path)
+        mic_id_raw = env_str_any(("MIC_ID", "MIC_DEVICE", "DEMO_MIC_ID", "DEMO_MIC_DEVICE"), "").strip()
+        mic_device: Optional[int] = None
+        if mic_id_raw:
+            try:
+                mic_device = int(mic_id_raw)
+            except ValueError:
+                print(
+                    "[DemoApplication] MIC_ID/MIC_DEVICE는 숫자 인덱스만 지원합니다. "
+                    f"현재 값('{mic_id_raw}')은 무시하고 기본 입력장치를 사용합니다."
+                )
         mic_sr = env_int_any(("MIC_SAMPLERATE", "DEMO_MIC_SAMPLERATE", "VOICEFLOW_STT_SAMPLERATE"), 16000)
         mic_block = env_int_any(("MIC_BLOCKSIZE", "DEMO_MIC_BLOCKSIZE"), 1024)
 
@@ -289,32 +297,48 @@ class DemoApplication:
             backend_kwargs=backend_kwargs,
         )
 
+        self._asr_init_error = ""
         self._status_text = f"ASR 모델 로딩 중... ({stt_backend}/{stt_model})"
-        self._asr_processor.warmup()
-
-        self._asr_worker = AccumulateAsrWorker(
-            bus=self._bus,
-            processor=self._asr_processor,
-            in_topic="audio/raw",
-            out_topic="text/asr",
-            status_topic="text/asr_status",
-            step_s=asr_step_s,
-            max_window_s=asr_max_s,
-            samplerate=mic_sr,
-            enable_logging=enable_logging,
-            log_dir=str(PROJECT_ROOT / "logs"),
-            name="demo-asr-worker",
-        )
+        try:
+            self._asr_processor.warmup()
+            self._asr_worker = AccumulateAsrWorker(
+                bus=self._bus,
+                processor=self._asr_processor,
+                in_topic="audio/raw",
+                out_topic="text/asr",
+                status_topic="text/asr_status",
+                step_s=asr_step_s,
+                max_window_s=asr_max_s,
+                samplerate=mic_sr,
+                enable_logging=enable_logging,
+                log_dir=str(PROJECT_ROOT / "logs"),
+                name="demo-asr-worker",
+            )
+        except Exception as exc:
+            error_line = str(exc).strip().splitlines()[0] if str(exc).strip() else repr(exc)
+            self._asr_init_error = error_line
+            self._asr_worker = None
+            print(
+                "[DemoApplication] 경고: ASR 초기화 실패 -> ASR 비활성화 후 계속 실행 | "
+                f"reason={error_line}"
+            )
+            if self._asr_processor is not None:
+                try:
+                    self._asr_processor.close()
+                except Exception:
+                    pass
+                self._asr_processor = None
 
         self._camera.start()
         self._face_worker.start()
         self._landmark_worker.start()
         self._pose_worker.start()
         self._mic_source.start()
-        self._asr_worker.start()
+        if self._asr_worker is not None:
+            self._asr_worker.start()
 
         self._running = True
-        self._status_text = "실행 중"
+        self._status_text = "실행 중" if self._asr_worker is not None else "실행 중 (ASR 비활성화)"
 
     def _stop_pipeline(self) -> None:
         if self._asr_worker is not None:
@@ -579,15 +603,19 @@ class DemoApplication:
 
         line_y = self._draw_rms_bar(panel_rect, line_y)
 
-        warmup_line = (
-            "warmup=done"
-            if self._latest_warmup_done
-            else f"warmup={self._latest_warmup_pct:.0f}% ({self._latest_warmup_buffer_s:.1f}/{self._latest_warmup_target_s:.1f}s)"
-        )
-        stt_meta_line = (
-            f"lang={self._latest_lang} infer={self._latest_infer_ms:.0f}ms "
-            f"buffer={self._latest_buffer_s:.1f}s q={self._latest_queue_chunks}"
-        )
+        if self._asr_worker is None:
+            warmup_line = "asr=disabled (startup failure)"
+            stt_meta_line = (self._asr_init_error or "STT worker not started")[:120]
+        else:
+            warmup_line = (
+                "warmup=done"
+                if self._latest_warmup_done
+                else f"warmup={self._latest_warmup_pct:.0f}% ({self._latest_warmup_buffer_s:.1f}/{self._latest_warmup_target_s:.1f}s)"
+            )
+            stt_meta_line = (
+                f"lang={self._latest_lang} infer={self._latest_infer_ms:.0f}ms "
+                f"buffer={self._latest_buffer_s:.1f}s q={self._latest_queue_chunks}"
+            )
         self.screen.blit(self.font_small.render(warmup_line, True, (190, 190, 255)), (panel_rect.x + 12, line_y))
         line_y += 20
         self.screen.blit(self.font_small.render(stt_meta_line, True, (190, 190, 255)), (panel_rect.x + 12, line_y))

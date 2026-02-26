@@ -1,14 +1,52 @@
 from __future__ import annotations
 
+import importlib
+import sys
+import types
 from pathlib import Path
 
 import numpy as np
-from faster_whisper import WhisperModel
 
 from voiceFlow.vendors.miso_stt.core.config import CT2_CACHE_DIR, MODEL_DIR, get_compute_type, get_device, resolve_ct2_model_id
 from voiceFlow.vendors.miso_stt.core.filters import is_repetition_hallucination
 from voiceFlow.vendors.miso_stt.core.model_resolver import _resolve_local_ct2_model, describe_ct2_model_path_issue
 from voiceFlow.vendors.miso_stt.core.types import Segment
+
+
+def _install_av_stub() -> None:
+    """Provide minimal av module for slim builds where PyAV is excluded."""
+    if "av" in sys.modules:
+        return
+
+    av_stub = types.ModuleType("av")
+
+    def _unavailable(*_args, **_kwargs):
+        raise RuntimeError(
+            "PyAV is not bundled in this slim build. "
+            "Pass numpy waveform input instead of audio file paths."
+        )
+
+    class _Unavailable:
+        def __init__(self, *_args, **_kwargs):
+            _unavailable()
+
+    av_stub.open = _unavailable
+    av_stub.error = types.SimpleNamespace(InvalidDataError=RuntimeError)
+    av_stub.audio = types.SimpleNamespace(
+        resampler=types.SimpleNamespace(AudioResampler=_Unavailable),
+        fifo=types.SimpleNamespace(AudioFifo=_Unavailable),
+    )
+    sys.modules["av"] = av_stub
+
+
+def _load_whisper_model():
+    try:
+        return importlib.import_module("faster_whisper").WhisperModel
+    except ModuleNotFoundError as exc:
+        if exc.name != "av":
+            raise
+        _install_av_stub()
+        return importlib.import_module("faster_whisper").WhisperModel
 
 
 class CT2Transcriber:
@@ -69,13 +107,38 @@ class CT2Transcriber:
                 load_source = "hf_hub_or_cache"
                 resolved_local_path = None
 
-        model = WhisperModel(
-            model_id,
-            device=torch_device.type,
-            compute_type=compute_type,
-            download_root=download_root,
-            local_files_only=local_files_only,
-        )
+        WhisperModel = _load_whisper_model()
+
+        try:
+            model = WhisperModel(
+                model_id,
+                device=torch_device.type,
+                compute_type=compute_type,
+                download_root=download_root,
+                local_files_only=local_files_only,
+            )
+        except ValueError as e:
+            msg = str(e).lower()
+            fp16_not_supported = (
+                compute_type == "float16"
+                and any(k in msg for k in ("float16", "fp16", "do not support", "not support efficient"))
+            )
+            if not fp16_not_supported:
+                raise
+
+            fallback_compute_type = "float32"
+            print(
+                "[CT2Transcriber] 경고: float16 미지원 환경 감지 -> float32로 재시도 | "
+                f"reason={str(e).strip() or repr(e)}"
+            )
+            model = WhisperModel(
+                model_id,
+                device=torch_device.type,
+                compute_type=fallback_compute_type,
+                download_root=download_root,
+                local_files_only=local_files_only,
+            )
+            compute_type = fallback_compute_type
 
         self.model = model
         self.model_id = model_id

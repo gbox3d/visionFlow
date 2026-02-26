@@ -7,9 +7,29 @@ from typing import Any, Dict, Literal, Optional
 import numpy as np
 
 from voiceFlow.pipeline.packet import AsrResultPacket
+from voiceFlow.vendors.miso_stt.core.config import CT2_CACHE_DIR, HF_CACHE_DIR
 from voiceFlow.vendors.miso_stt.transcriber import WhisperTranscriber
 
 BackendName = Literal["ct2", "hf_generate", "hf_pipeline"]
+
+
+_DOWNLOAD_ERROR_HINTS = (
+    "ssl",
+    "tls",
+    "readerror",
+    "connecterror",
+    "connection reset",
+    "bad record mac",
+    "certificate",
+    "timeout",
+    "network",
+    "httpx",
+    "huggingface_hub",
+)
+
+
+def _looks_like_download_error(msg: str) -> bool:
+    return any(hint in msg for hint in _DOWNLOAD_ERROR_HINTS)
 
 
 class MisoSttAsrProcessor:
@@ -70,6 +90,13 @@ class MisoSttAsrProcessor:
                 and any(k in msg for k in ("cuda", "cublas", "cudnn", "ctranslate2", "cublas64_12", "cudnn64_9"))
             )
             if not is_ct2_cuda_load_issue:
+                if self.model_path is None and _looks_like_download_error(msg):
+                    cache_hint = CT2_CACHE_DIR if self.backend == "ct2" else HF_CACHE_DIR
+                    raise RuntimeError(
+                        "STT 모델 다운로드 실패(네트워크/SSL). "
+                        "모델을 사전 다운로드한 뒤 VOICEFLOW_STT_MODEL_PATH에 로컬 모델 경로를 지정하세요. "
+                        f"(cache={Path(str(cache_hint)).resolve()})"
+                    ) from e
                 raise
 
             self._ct2_fallback_cpu = True

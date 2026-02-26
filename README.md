@@ -129,18 +129,7 @@ src/visionflow/
 
 ## Scripts Reference
 
-| Command | Entry Point | Description |
-|---------|-------------|-------------|
-| `visionflow` | `visionflow.main:main` | 인터랙티브 샘플 런처 |
-| `vf-camera-simple` | `visionflow.sample.camera.simple:main` | 기본 카메라 뷰어 |
-| `vf-camera-dual` | `visionflow.sample.camera.dual_cam:main` | 듀얼 카메라 |
-| `vf-camera-list` | `visionflow.sample.camera.list_cameras:main` | 카메라 디바이스 목록 |
-| `vf-camera-resolutions` | `visionflow.sample.camera.list_resolutions:main` | 해상도 목록 |
-| `vf-face-detect` | `visionflow.sample.face_detection.simple:main` | 얼굴 검출 |
-| `vf-face-landmark` | `visionflow.sample.face_detection.simple_landmark:main` | 얼굴 랜드마크 |
-| `vf-face-3d` | `visionflow.sample.face_detection.transform_3d:main` | 3D 얼굴 변환 |
-| `vf-pose` | `visionflow.sample.pose.simple:main` | 포즈 감지 |
-| `vf-detect-test` | `visionflow.sample.detect_test:main` | 전체 파이프라인 테스트 |
+
 
 ## Requirements
 
@@ -203,12 +192,8 @@ HF LoRA 주의:
 통합 데모(`main.py`, pygame) 해상도 튜닝:
 
 ```env
-# 우선 사용 (권장): WxH 포맷
-CAMERA_RESOLUTION=640x480
-
-# fallback (CAMERA_RESOLUTION이 비어있을 때)
-CAMERA_WIDTH=640
-CAMERA_HEIGHT=480
+# 단일 설정 (권장): WxH 포맷
+CAMERA_RESOLUTION=1280x720
 
 # detection counts
 MAX_FACE=1
@@ -216,6 +201,16 @@ MAX_POSE=1
 ```
 
 `face + pose` 동시 추론에서는 해상도를 높일수록 FPS가 크게 떨어질 수 있습니다.
+
+소스 점검 + `.env` 편집 유틸 (`deviceMngUI.py`):
+
+```bash
+uv run python deviceMngUI.py
+```
+
+카메라 입력 프리뷰, 마이크 RMS 게이지, `.env` 키/값 편집/저장을 한 UI에서 처리합니다.
+`DEVICE_PATH`, `CAMERA_ID`, `CAMERA_RESOLUTION`, `MIC_DEVICE`는 다이얼로그 선택기로 지정할 수 있습니다.
+`CAMERA_RESOLUTION`은 현재 선택된 카메라에서 프로빙된 지원 해상도 목록으로만 선택됩니다.
 
 백엔드 가이드:
 - `hf_generate`, `hf_pipeline`: LoRA/파인튜닝 확장 대비 권장

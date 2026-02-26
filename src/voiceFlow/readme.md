@@ -95,12 +95,14 @@ UI에는 시작 후 아래 정보가 표시됩니다.
 
 - 콘솔: `device_lister.py`
 - UI: `device_lister_ui.py`
+- 통합 테스트/설정 UI: `deviceMngUI.py`
 
 개발 환경 실행:
 
 ```bash
 uv run python device_lister.py
 uv run python device_lister_ui.py
+uv run python deviceMngUI.py
 ```
 
 배포 빌드:

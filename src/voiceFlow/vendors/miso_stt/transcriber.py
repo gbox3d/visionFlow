@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+import importlib
 from typing import Literal
 
 import numpy as np
 
-from voiceFlow.vendors.miso_stt.backends.ct2 import CT2Transcriber
-from voiceFlow.vendors.miso_stt.backends.hf_generate import GenerateTranscriber
-from voiceFlow.vendors.miso_stt.backends.hf_pipeline import PipelineTranscriber
 from voiceFlow.vendors.miso_stt.core.types import Segment
 
 BackendName = Literal["hf_generate", "hf_pipeline", "ct2"]
+
+_BACKEND_CLASS_PATHS: dict[BackendName, tuple[str, str]] = {
+    "ct2": ("voiceFlow.vendors.miso_stt.backends.ct2", "CT2Transcriber"),
+    "hf_generate": ("voiceFlow.vendors.miso_stt.backends.hf_generate", "GenerateTranscriber"),
+    "hf_pipeline": ("voiceFlow.vendors.miso_stt.backends.hf_pipeline", "PipelineTranscriber"),
+}
 
 
 class WhisperTranscriber:
@@ -23,32 +27,27 @@ class WhisperTranscriber:
         **backend_kwargs,
     ):
         self.backend_name = backend
-        if backend == "hf_generate":
-            self.backend = GenerateTranscriber(
-                model_name=model_name,
-                model_path=model_path,
-                device=device,
-                fp16=fp16,
-                **backend_kwargs,
-            )
-        elif backend == "hf_pipeline":
-            self.backend = PipelineTranscriber(
-                model_name=model_name,
-                model_path=model_path,
-                device=device,
-                fp16=fp16,
-                **backend_kwargs,
-            )
-        elif backend == "ct2":
-            self.backend = CT2Transcriber(
-                model_name=model_name,
-                model_path=model_path,
-                device=device,
-                fp16=fp16,
-                **backend_kwargs,
-            )
-        else:
+        class_path = _BACKEND_CLASS_PATHS.get(backend)
+        if class_path is None:
             raise ValueError(f"Unsupported backend: {backend}")
+
+        module_name, class_name = class_path
+        try:
+            backend_module = importlib.import_module(module_name)
+            backend_cls = getattr(backend_module, class_name)
+        except Exception as exc:  # pragma: no cover - runtime dependency guard
+            raise RuntimeError(
+                f"STT backend '{backend}' is unavailable in this build "
+                f"({module_name}.{class_name} import failed: {exc})"
+            ) from exc
+
+        self.backend = backend_cls(
+            model_name=model_name,
+            model_path=model_path,
+            device=device,
+            fp16=fp16,
+            **backend_kwargs,
+        )
 
     @property
     def model_id(self) -> str:

@@ -19,7 +19,6 @@ def _add_data_file(out: list[tuple[str, str]], relative_path: str, target_dir: s
 
 
 datas = []
-# Keep only models required by kiosk_demo defaults.
 for rel_model_path in (
     "models/blaze_face_short_range.tflite",
     "models/face_landmarker.task",
@@ -49,18 +48,16 @@ def _keep_binary(entry) -> bool:
     probe = f"{dst}|{src}"
     return not any(hint in probe for hint in _DROP_BINARY_HINTS)
 
+
 hiddenimports = [
     "cv2_enumerate_cameras",
     "faster_whisper",
     "faster_whisper.transcribe",
     "voiceFlow.vendors.miso_stt.backends",
     "voiceFlow.vendors.miso_stt.backends.ct2",
-    "voiceFlow.vendors.miso_stt.backends.hf_generate",
-    "voiceFlow.vendors.miso_stt.backends.hf_pipeline",
 ]
 
 excludes = [
-    # GUI/sample/debug dependencies not used by kiosk_demo runtime.
     "PySide6",
     "shiboken6",
     "visionflow.sample",
@@ -73,7 +70,11 @@ excludes = [
     "scipy",
     "hf_xet",
     "av",
-    # Optional extras not required by kiosk_demo runtime.
+    "voiceFlow.vendors.miso_stt.backends.hf_generate",
+    "voiceFlow.vendors.miso_stt.backends.hf_pipeline",
+    "transformers",
+    "accelerate",
+    "torch",
     "torchaudio",
     "torchvision",
 ]
@@ -100,7 +101,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="kiosk_demo",
+    name="kiosk_demo_ct2_slim",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -119,5 +120,6 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name="kiosk_demo",
+    name="kiosk_demo_ct2_slim",
 )
+

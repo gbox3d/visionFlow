@@ -17,6 +17,7 @@ class CameraSource:
     - 프레임을 out_topic으로 계속 publish
     - read 실패 누적 시 자동 재연결
     - device_path 지정 시 path 기반으로 카메라를 식별하여 연결
+    - target_vid/pid 지정 시 해당 모델을 찾아 연결 (path가 없을 때 유용)
     """
 
     def __init__(
@@ -25,6 +26,9 @@ class CameraSource:
         out_topic: str = "frame/raw",
         camera_id: int = 0,
         device_path: Optional[str] = None,
+        target_vid: Optional[int] = None,
+        target_pid: Optional[int] = None,
+        vid_pid_index: int = 0,
         request_width: int = 640,
         request_height: int = 480,
         max_fail: int = 60,
@@ -37,6 +41,9 @@ class CameraSource:
         self.out_topic = out_topic
 
         self.device_path = device_path
+        self.target_vid = target_vid
+        self.target_pid = target_pid
+        self.vid_pid_index = int(vid_pid_index)
         self.request_width = int(request_width)
         self.request_height = int(request_height)
 
@@ -44,7 +51,7 @@ class CameraSource:
         self.reconnect_sleep_s = float(reconnect_sleep_s)
         self.use_dshow = bool(use_dshow)
 
-        # device_path가 지정된 경우 path → index 해상
+        # 1. device_path가 지정된 경우 path → index 해상 (가장 우선)
         if self.device_path:
             resolved = self._resolve_index_from_path(self.device_path)
             if resolved is not None:
@@ -55,6 +62,18 @@ class CameraSource:
                     f"camera_id={camera_id} 사용: {self.device_path}"
                 )
                 self.camera_id = int(camera_id)
+        # 2. VID/PID가 지정된 경우 (Path가 없는 환경 대응)
+        elif self.target_vid is not None:
+            resolved = self._resolve_index_from_vid_pid(self.target_vid, self.target_pid, self.vid_pid_index)
+            if resolved is not None:
+                self.camera_id = resolved
+            else:
+                print(
+                    f"[CameraSource] VID:PID({self.target_vid:04X}:{self.target_pid or 0:04X}) "
+                    f"index={self.vid_pid_index} 찾기 실패, camera_id={camera_id} 사용"
+                )
+                self.camera_id = int(camera_id)
+        # 3. 그 외: 단순 인덱스 사용
         else:
             self.camera_id = int(camera_id)
 
@@ -116,6 +135,48 @@ class CameraSource:
         elif cam.index >= cv2.CAP_DSHOW:
             return cam.index - cv2.CAP_DSHOW
         return cam.index
+
+    def _resolve_index_from_vid_pid(self, vid: int, pid: Optional[int], nth: int) -> Optional[int]:
+        """
+        VID(필수), PID(옵션)가 일치하는 카메라 중 nth번째 장치의 인덱스를 반환한다.
+        Path가 없는 시스템에서 특정 모델을 잡을 때 사용한다.
+        """
+        try:
+            from cv2_enumerate_cameras import enumerate_cameras
+        except ImportError:
+            print("[CameraSource] cv2-enumerate-cameras 패키지가 필요합니다")
+            return None
+
+        prefer_backend = cv2.CAP_DSHOW if self.use_dshow else cv2.CAP_MSMF
+        candidates = []
+
+        for cam in enumerate_cameras():
+            # VID 비교
+            if cam.vid != vid:
+                continue
+            # PID 비교 (None이면 VID만 확인)
+            if pid is not None and cam.pid != pid:
+                continue
+            candidates.append(cam)
+
+        if not candidates:
+            return None
+
+        # 인덱스 순으로 정렬 (시스템 열거 순서 의존)
+        candidates.sort(key=lambda x: x.index)
+
+        if nth < 0 or nth >= len(candidates):
+            return None
+
+        target_cam = candidates[nth]
+        
+        # 백엔드 오프셋 제거하여 실제 cv2 index 계산
+        # (cv2_enumerate_cameras는 backend별로 index range가 다를 수 있음)
+        if target_cam.index >= cv2.CAP_MSMF:
+            return target_cam.index - cv2.CAP_MSMF
+        elif target_cam.index >= cv2.CAP_DSHOW:
+            return target_cam.index - cv2.CAP_DSHOW
+        return target_cam.index
 
     def _suppress_opencv_warnings(self):
         try:
@@ -190,6 +251,15 @@ class CameraSource:
                 print(
                     f"[CameraSource] device_path 재해상: "
                     f"id {self.camera_id} → {resolved}"
+                )
+                self.camera_id = resolved
+        
+        # VID/PID 모드일 때도 재해상 시도 (USB 포트 변경 등으로 순서가 바뀔 수 있음)
+        elif self.target_vid is not None:
+            resolved = self._resolve_index_from_vid_pid(self.target_vid, self.target_pid, self.vid_pid_index)
+            if resolved is not None and resolved != self.camera_id:
+                print(
+                    f"[CameraSource] VID:PID 재해상: id {self.camera_id} → {resolved}"
                 )
                 self.camera_id = resolved
 
