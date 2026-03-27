@@ -37,9 +37,11 @@ torch = { index = "pytorch-cu128" }
 
 [project.scripts]
 visionflow = "visionflow.main:main"
+asrflow-server = "asrFlow.gateways.tcp_asr_server:main"
+asrflow-mic-client = "asrFlow.sample.microphone_client:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/visionflow", "src/voiceFlow"]
+packages = ["src/common", "src/asrFlow", "src/visionflow", "src/voiceFlow"]
 
 [dependency-groups]
 dev = [
