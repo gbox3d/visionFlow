@@ -283,7 +283,7 @@ typedef struct {
 {
   "service": "asrFlow",
   "ready": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "uptime_ms": 154233,
   "active_jobs": 2
 }
@@ -340,7 +340,7 @@ typedef struct {
   "service_type": 3,
   "ready": true,
   "model_loaded": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "uptime_ms": 21002,
   "active_jobs": 0,
   "echo": "optional"

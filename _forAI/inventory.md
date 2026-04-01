@@ -2,148 +2,116 @@
 
 ## 목적
 
-이 문서는 지금 이 repo 안에 실제로 무엇이 있는지, 그리고 어떤 자산이 다음 구조로 넘어갈 핵심 후보인지 빠르게 확인하기 위한 현재 상태 인벤토리다.
+현재 repo에서 실제로 쓰는 entry point, canonical 파일, 남아 있는 compatibility 표면을 빠르게 확인하기 위한 인벤토리다.
 
-과거 문서처럼 외부 repo 전체를 가정해서 쓰기보다, 우선 `NeuroFlow` 현재 작업 트리 기준으로 정리한다.
-
-
-## 1. 현재 repo 핵심 자산
+## 1. 실제 실행 표면
 
 | 경로 | 상태 | 역할 |
 | --- | --- | --- |
-| `src/visionflow` | `Stable` | 카메라, 얼굴/포즈 추론, 렌더링 샘플, `TopicBus` 기반 실시간 파이프라인 |
-| `src/voiceFlow` | `Reusable Legacy Core` | 현재 가장 성숙한 ASR/STT 자산 보관소 |
-| `src/asrFlow` | `In Progress` | 새 공통 프로토콜 기반 ASR 서버 시작점 |
-| `src/common` | `In Progress` | 공통 계약, protocol, packet, job 정의 |
-| `scripts/`, `*.spec`, 디바이스 도구 | `Support` | 개발/배포/디바이스 점검 보조 자산 |
-| `_forAI` | `Planning` | 문서 기반 구조 정리와 의사결정 기록 |
+| `src/common` | `Canonical` | runtime bus, packet contracts, audio codec, NFCP |
+| `src/voiceFlow` | `Canonical` | 오디오 source, ingress server, client, voice launcher |
+| `src/asrFlow` | `Canonical` | bootstrap, processor, worker, ASR service, vendor |
+| `src/neuroflow/app` | `Canonical` | app 조립과 실행 진입점 |
+| `src/visionflow` | `Canonical` | vision runtime과 sample |
+| `sample.env` | `Reference` | canonical env 예시 |
+| `_forAI` | `Docs` | 구조 메모와 작업 기록 |
 
+## 2. Public Commands
 
-## 2. 모듈별 관찰
-
-### `src/visionflow`
-
-강점:
-
-- 구조가 가장 정돈되어 있다.
-- `pipeline -> source -> worker -> sample` 흐름이 명확하다.
-- `TopicBus`가 이미 검증된 패턴으로 보인다.
-
-주의:
-
-- 현재는 시각 파이프라인 중심이다.
-- 아직 `backend`나 `common`과 직접 연결되는 계약은 없다.
-
-### `src/voiceFlow`
-
-강점:
-
-- `miso_stt` 기반 ASR processor와 vendor 코드가 있다.
-- `audioMi` 입력, 마이크 입력, 누적형 worker, 샘플 UI가 있다.
-- 실전적으로 쓸 수 있는 자산이 가장 많다.
-
-주의:
-
-- 이름은 `voiceFlow`지만 실제로는 ASR/STT 쪽 비중이 훨씬 크다.
-- UI/샘플/유틸이 섞여 있어 그대로 새 표준 구조로 삼기에는 경계가 흐리다.
-
-### `src/asrFlow`
-
-강점:
-
-- 새 `NFCP` 기반 서버 진입점이 이미 있다.
-- 마이크 샘플 클라이언트가 있어 end-to-end 확인이 가능하다.
-
-주의:
-
-- `processors/miso_stt_asr.py`는 아직 `voiceFlow` 브리지다.
-- `sources`, `workers`, `vendors`는 아직 본격 이동되지 않았다.
-
-### `src/common`
-
-강점:
-
-- 새 서비스 계약의 씨앗이 이미 생겼다.
-- `common_protocol.md`와 `nfcp.py`가 함께 있어 문서와 코드가 연결된다.
-
-주의:
-
-- `utils`, `errors`, 공통 bus 계층은 아직 비어 있거나 미정이다.
-
-
-## 3. 지금 바로 가치가 큰 파일
-
-| 파일 | 분류 | 메모 |
+| 커맨드 | 상태 | 메모 |
 | --- | --- | --- |
-| `src/visionflow/pipeline/bus.py` | `Adopt or Promote Later` | 공통 event bus 후보 |
-| `src/voiceFlow/processors/miso_stt_asr.py` | `Adopt` | 실제 ASR core 진입점 |
-| `src/voiceFlow/workers/accumulate_asr_worker.py` | `Adopt` | 실시간 누적 ASR 동작 핵심 |
-| `src/voiceFlow/sources/audiomi_source.py` | `Adopt` | 외부 PCM 입력 연동 자산 |
-| `src/voiceFlow/vendors/miso_stt/*` | `Adopt` | ASR backend 실제 구현 |
-| `src/common/contracts/packets.py` | `Keep` | 공통 packet 정의 시작점 |
-| `src/common/contracts/job.py` | `Keep` | job 요청/결과 상태 모델 |
-| `src/common/protocols/common_protocol.md` | `Keep` | 서비스 간 공통 통신 계약 초안 |
-| `src/common/protocols/nfcp.py` | `Keep` | 공통 프로토콜 구현 |
-| `src/asrFlow/gateways/tcp_asr_server.py` | `Keep and Expand` | 새 구조의 첫 gateway |
-| `src/asrFlow/sample/microphone_client.py` | `Keep` | 프로토콜 smoke test 용도 |
+| `uv run nf-vision` | `Keep` | vision sample launcher |
+| `uv run nf-vision-models-download` | `Keep` | MediaPipe 기본 모델 다운로드 |
+| `uv run nf-voice` | `Keep` | voice sample launcher |
+| `uv run nf-voice-mic-client` | `Keep` | 마이크 녹음 후 NFCP ASR ingress 요청 |
+| `uv run nf-asr-server` | `Keep` | canonical NFCP ASR 서버 |
+| `uv run nf-asr-chunk-realtime` | `Keep` | 로컬 마이크 chunk ASR UI |
+| `uv run nf-audiomi-asr-chunk-realtime` | `Keep` | audioMi accumulate chunk ASR UI |
+| `uv run nf-asr-stream-realtime` | `Keep` | Qwen native streaming UI |
 
+## 3. App Entry Point Map
 
-## 4. 아직 비어 있는 축
+| 모듈 | 역할 | 비고 |
+| --- | --- | --- |
+| `neuroflow.app.asr_server` | server composition root | `voiceFlow` + `asrFlow` 조립 |
+| `neuroflow.app.asr_chunk_realtime` | 로컬 마이크 chunk UI | `AsrWorker` 사용 |
+| `neuroflow.app.audiomi_asr_chunk_realtime` | audioMi accumulate UI | `AccumulateAsrWorker` 사용 |
+| `neuroflow.app.asr_stream_realtime` | native stream UI | `StreamingAsrWorker` 사용 |
+| `voiceFlow.main` | voice launcher | 위 app과 source sample 호출 |
 
-현재 repo 안에는 아래 디렉터리가 없다.
+## 4. Canonical Files
 
-- `src/llmFlow`
-- `src/ttsFlow`
-- `src/backend`
+### 공용 기반
 
-즉, 프로젝트 비전은 멀티모달 전체이지만 실제 구현 진척은 아직 `vision + ASR/common` 쪽에 몰려 있다.
+| 파일 | 역할 |
+| --- | --- |
+| `src/common/runtime/bus.py` | canonical `TopicBus` |
+| `src/common/contracts/packets.py` | `AudioPacket`, `AsrResultPacket` |
+| `src/common/contracts/asr_gateway.py` | ASR request/response contract |
+| `src/common/runtime/audio_codec.py` | transport 오디오 encode/decode |
+| `src/common/protocols/nfcp.py` | NFCP protocol 구현 |
 
+### voice ingress
 
-## 5. 외부 참고 자산
+| 파일 | 역할 |
+| --- | --- |
+| `src/voiceFlow/gateways/asr_ingress_server.py` | canonical NFCP ingress server |
+| `src/voiceFlow/sources/microphone_source.py` | microphone source |
+| `src/voiceFlow/sources/audiomi_source.py` | audioMi source |
+| `src/voiceFlow/sample/microphone_client.py` | NFCP batch client |
+| `src/voiceFlow/main.py` | voice launcher |
 
-현재 repo 밖에 있지만 향후 씨앗이 될 가능성이 높은 외부 자산은 아래와 같다.
+### ASR core
 
-- `voiceAI/STT`
-  - legacy TCP STT 서버와 프로토콜
-- `voiceAI/TTS`
-  - legacy TCP TTS 서버와 엔진 실험 코드
-- `miso_kiosk/llm`
-  - 대화 메모리, 프롬프트, LLM provider 후보 자산
+| 파일 | 역할 |
+| --- | --- |
+| `src/asrFlow/bootstrap.py` | env load / processor bootstrap |
+| `src/asrFlow/processors/miso_stt_asr.py` | chunk / batch canonical processor |
+| `src/asrFlow/processors/qwen_streaming_asr.py` | Qwen native streaming processor |
+| `src/asrFlow/workers/asr_worker.py` | chunk worker |
+| `src/asrFlow/workers/accumulate_asr_worker.py` | accumulate worker |
+| `src/asrFlow/workers/streaming_asr_worker.py` | native streaming worker |
+| `src/asrFlow/services/nfcp_asr_handler.py` | decoded request -> processor 호출 |
+| `src/asrFlow/vendors/whisper/*` | Whisper runtime |
+| `src/asrFlow/vendors/qwen_asr/*` | Qwen transformers runtime |
 
-이 자산들은 지금 인벤토리의 핵심이 아니라, 필요 시 가져올 후보군으로 보는 편이 맞다.
+### app layer
 
+| 파일 | 역할 |
+| --- | --- |
+| `src/neuroflow/app/asr_server.py` | server composition |
+| `src/neuroflow/app/asr_chunk_realtime.py` | chunk UI |
+| `src/neuroflow/app/audiomi_asr_chunk_realtime.py` | accumulate UI |
+| `src/neuroflow/app/asr_stream_realtime.py` | stream UI |
+| `src/neuroflow/app/asr_model_catalog.py` | model/backend 분류 |
+| `src/neuroflow/app/asr_ui_common.py` | UI 공용 gauge/bridge |
 
-## 6. 지금 시점 분류
+## 5. Model Experiment Split
 
-### `Adopt`
+| 구분 | 모델/백엔드 |
+| --- | --- |
+| `chunk` | Whisper `ct2`, `hf_generate`, `hf_pipeline` |
+| `chunk` | Qwen ASR `qwen_transformers` |
+| `stream` | Qwen ASR `qwen_transformers` |
 
-- `visionflow`의 파이프라인 패턴
-- `voiceFlow`의 ASR processor, vendor, source, worker
-- `common`의 NFCP/job/packet 정의
-- `asrFlow`의 gateway/client 뼈대
+## 6. Live Compatibility Surface
 
-### `Adapt`
+현재 소스 기준으로 문서화할 가치가 남아 있는 compatibility surface는 거의 없다.
 
-- `voiceFlow`의 env/util 구조
-- `voiceFlow` 샘플 코드 중 UI 의존이 적은 부분
-- `TopicBus`의 공통 계층 승격 여부
+| 파일 | 상태 | 설명 |
+| --- | --- | --- |
+| `src/visionflow/pipeline/bus.py` | `Bridge` | `common.runtime.bus` re-export |
+| `src/asrFlow/utils/audio.py` | `Bridge` | `common.runtime.audio_codec` re-export |
 
-### `Reference`
+나머지 예전 `main.py`, device UI/spec, `voiceFlow` 내부 STT 구현물, legacy gateway/sample shim은 소스 파일 기준으로 제거된 상태다.
 
-- 루트 `README.md`
-- 디바이스 관리 UI와 각종 배포 스크립트
-- 외부 repo의 legacy STT/TTS/LLM 자산
+## 7. 설치 메모
 
-### `Exclude for Core`
+| 용도 | 명령 |
+| --- | --- |
+| 기본 개발 및 stream 예제 포함 | `uv sync` |
 
-- PyInstaller spec
-- UI 전용 편의 도구
-- 대용량 테스트 미디어
-- 앱 조립 중심 코드
+메모:
 
-
-## 7. 현재 결론
-
-- 이 프로젝트의 진짜 출발점은 `visionflow`와 `voiceFlow`다.
-- 새 표준 구조의 출발점은 `common`과 `asrFlow`다.
-- 앞으로 가장 먼저 정리해야 할 것은 `voiceFlow -> asrFlow` 실제 이관 범위 확정이다.
+- 현재 native stream 경로는 기본 dependency에 포함돼 있다.
+- stream 예제와 NFCP streaming path는 모두 `Qwen ASR + qwen_transformers` 기준이다.

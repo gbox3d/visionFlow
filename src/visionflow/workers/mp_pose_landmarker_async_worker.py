@@ -8,7 +8,8 @@ from typing import Any, Dict, Optional
 import cv2
 import mediapipe as mp
 
-from visionflow.pipeline.bus import TopicBus
+from common.runtime.model_assets import require_model_file
+from common.runtime.bus import TopicBus
 from visionflow.pipeline.packet import FramePacket
 
 
@@ -90,7 +91,7 @@ class MpPoseLandmarkerAsyncWorker:
 
         # 옵션 합성
         opts = dict(self.model_options)
-        opts["base_options"] = BaseOptions(model_asset_path=self.model_path)
+        opts["base_options"] = BaseOptions(model_asset_path=require_model_file(self.model_path))
         opts["running_mode"] = RunningMode.LIVE_STREAM
         opts["result_callback"] = _callback
 

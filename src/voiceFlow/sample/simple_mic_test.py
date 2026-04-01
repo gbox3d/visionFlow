@@ -3,9 +3,8 @@ from __future__ import annotations
 import time
 import threading
 
-from visionflow.pipeline.bus import TopicBus
+from common.runtime.bus import TopicBus
 from voiceFlow.sources.microphone_source import MicrophoneSource
-from voiceFlow.pipeline.packet import AudioPacket
 from typing import Optional
 
 

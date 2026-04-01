@@ -1,228 +1,238 @@
-# VisionFlow
+# NeuroFlow
 
-Realtime vision pipeline (camera → processors → render)
+`NeuroFlow`는 vision runtime, audio ingress, ASR core를 한 저장소에서 운영하는 멀티모달 런타임이다.
 
-OpenCV 카메라 캡처, MediaPipe 추론, Pygame 렌더링을 **TopicBus** 기반 pub/sub 파이프라인으로 연결하는 프레임워크입니다.
+현재 canonical 경계는 아래 5축으로 보는 것이 가장 정확하다.
 
-## Architecture
+- `common`
+  - 공용 contract, protocol, runtime
+- `neuroflow.app`
+  - composition root와 app-level entry point
+- `voiceFlow`
+  - source, client, ingress server
+- `asrFlow`
+  - env/bootstrap, processor, worker, vendor, ASR handler
+- `visionflow`
+  - 카메라/MediaPipe sample과 vision launcher
 
-```
-CameraSource ──publish──▶ TopicBus ──subscribe──▶ Workers ──publish──▶ TopicBus
-                              ▲                                           │
-                              └─────────── Application (Render) ◀─────────┘
-```
-
-- **Main Thread** : Pygame 렌더링만 담당
-- **Camera Thread** : 프레임 캡처만 담당
-- **Inference Thread** : 모델 추론만 담당 (IMAGE/VIDEO 동기 또는 LIVE_STREAM 비동기)
-- **TopicBus** : 스레드 안전 pub/sub 메시지 버스, 버전 기반 구독
+즉 NFCP ASR 서버는 `voiceFlow` transport와 `asrFlow` core를 `neuroflow.app.asr_server`에서 조립해 띄운다.
 
 ## Install
 
 ```bash
-# uv (권장)
 uv sync
-
-# pip
-pip install -e .
+uv run nf-vision-models-download
 ```
 
-## Quick Start
+Python `>=3.11` 기준이다.
 
-### 런처로 샘플 선택 실행
+`.env`가 필요하면 `sample.env`를 기준으로 프로젝트 루트에 배치하면 된다.
+
+## Public Entry Points
 
 ```bash
-uv run visionflow
+uv run nf-vision
+uv run nf-vision-models-download
+
+uv run nf-voice
+uv run nf-voice-mic-client --host 127.0.0.1 --port 26100 --duration 4
+
+uv run nf-asr-server
+uv run nf-asr-chunk-realtime
+uv run nf-audiomi-asr-chunk-realtime
+uv run nf-asr-stream-realtime
 ```
 
-번호를 입력하면 해당 샘플이 실행됩니다.
+- `nf-vision`
+  - vision sample menu launcher
+- `nf-vision-models-download`
+  - MediaPipe 기본 모델 bootstrap
+- `nf-voice`
+  - voice source / device / sample app launcher
+- `nf-voice-mic-client`
+  - 로컬 마이크를 녹음해 NFCP ASR ingress 서버로 보내는 batch client
+- `nf-asr-server`
+  - canonical NFCP ASR 서버
+  - `ASR_TRANSCRIBE` batch 요청을 처리한다
+  - `NF_ASR_STREAM_ENABLED=true`면 `ASR_TRANSCRIBE_STREAM`도 함께 노출한다
+- `nf-asr-chunk-realtime`
+  - 로컬 마이크 기반 chunk 실험 UI
+  - Whisper(`ct2`, `hf_generate`, `hf_pipeline`)와 Qwen ASR(`qwen_transformers`)를 시험한다
+- `nf-audiomi-asr-chunk-realtime`
+  - audioMi 입력 기반 accumulate chunk 실험 UI
+  - 누적 buffer 전체를 다시 추론하면서 suffix만 UI에 반영한다
+- `nf-asr-stream-realtime`
+  - 로컬 마이크 기반 native streaming 실험 UI
+  - 현재 canonical stream 경로는 `Qwen ASR + qwen-asr transformers backend`다
+  - Windows/Linux 모두 같은 경로로 실행 가능하게 맞춰져 있다
 
+## ASR Runtime Split
+
+### 1. Batch / Chunk
+
+```text
+MicrophoneSource or AudioMiSource
+  -> TopicBus("audio/raw")
+  -> AsrWorker / AccumulateAsrWorker
+  -> MisoSttAsrProcessor
+  -> TopicBus("text/asr")
+  -> UI or NFCP response
 ```
-==================================================
-  VisionFlow Sample Launcher
-==================================================
 
-  [Camera]
-    1) camera.simple                  - 기본 카메라 뷰어
-    2) camera.dual_cam                - 듀얼 카메라
-    3) camera.list_cameras            - 카메라 디바이스 목록
-    4) camera.list_resolutions        - 카메라 해상도 목록
+- 설정 키는 `ASRFLOW_STT_*`
+- 대표 backend는 `ct2`, `hf_generate`, `hf_pipeline`, `qwen_transformers`
+- `ASRFLOW_STT_MODEL_PATH`를 주면 로컬 모델 경로를 우선 사용한다
 
-  [Face Detection]
-    5) face_detection.simple          - 얼굴 검출
-    6) face_detection.simple_landmark - 얼굴 랜드마크
-    7) face_detection.transform_3d    - 3D 얼굴 변환
+### 2. Native Stream
 
-  [Pose]
-    8) pose.simple                    - 포즈 감지
-
-  [Full Pipeline]
-    9) detect_test                    - 전체 파이프라인 테스트
-
-    0) 종료
+```text
+MicrophoneSource
+  -> TopicBus("audio/raw")
+  -> StreamingAsrWorker
+  -> QwenStreamingAsrProcessor
+  -> TopicBus("text/asr")
+  -> UI or NFCP stream response
 ```
 
-### 개별 스크립트 직접 실행
+- 설정 키는 `ASRFLOW_STREAM_*`
+- 현재 canonical model family는 `Qwen/Qwen3-ASR-0.6B`
+- `qwen_asr`의 streaming 로직을 transformers backend로 재현해 `vLLM` 없이 동작한다
 
-`[project.scripts]`로 등록된 커맨드를 사용합니다.
+## NFCP ASR Server
+
+`uv run nf-asr-server`는 아래 두 경로를 한 프로세스에서 조립한다.
+
+```text
+voiceFlow.gateways.asr_ingress_server
+  -> common.protocols.nfcp
+  -> common.runtime.audio_codec
+  -> asrFlow.services.nfcp_asr_handler
+  -> asrFlow.processors.miso_stt_asr
+
+optional stream path
+  -> asrFlow.processors.qwen_streaming_asr
+```
+
+자주 쓰는 점검 순서:
 
 ```bash
-# Camera
-uv run vf-camera-simple
-uv run vf-camera-simple --camera-id 0 --width 1280 --height 720
-uv run vf-camera-dual
-uv run vf-camera-list
-uv run vf-camera-resolutions --camera-id 0
-
-# Face Detection
-uv run vf-face-detect --running-mode LIVE_STREAM --min-score 0.6
-uv run vf-face-detect --running-mode IMAGE
-uv run vf-face-landmark
-uv run vf-face-3d
-
-# Pose
-uv run vf-pose --running-mode LIVE_STREAM
-uv run vf-pose --running-mode IMAGE
-
-# Full Pipeline Test
-uv run vf-detect-test
+uv run nf-asr-server
+uv run nf-voice-mic-client --host 127.0.0.1 --port 26100 --duration 4
 ```
 
-## Project Structure
+## Vision Models
 
-```
-src/visionflow/
-  __init__.py
-  main.py                  # 인터랙티브 샘플 런처
-  pipeline/
-    bus.py                 # TopicBus - 스레드 안전 pub/sub 메시지 버스
-    packet.py              # FramePacket 데이터 클래스
-  sources/
-    camera_source.py       # OpenCV 카메라 캡처 (자동 재연결)
-  processors/
-    face_detector.py       # FaceDetector (동기, IMAGE/VIDEO)
-    pose_landmarker.py     # PoseLandmarker (동기, IMAGE/VIDEO)
-  workers/
-    sync_inference_worker.py              # 동기 추론 워커
-    mp_face_detector_async_worker.py      # Face Detector (LIVE_STREAM)
-    mp_face_landmarker_async_worker.py    # Face Landmarker (LIVE_STREAM)
-    mp_pose_landmarker_async_worker.py    # Pose Landmarker (LIVE_STREAM)
-  utils/
-    draw_utils.py          # 렌더링 유틸 (DrawUtils, Colors)
-    image.py               # 이미지 변환 (cv2 <-> pygame)
-    face_geometry.py       # 얼굴 3D 기하 계산
-    etc.py                 # 기타 유틸 (resource_path 등)
-  sample/
-    detect_test.py         # 전체 파이프라인 테스트
-    camera/
-      simple.py            # 기본 카메라 뷰어
-      dual_cam.py          # 듀얼 카메라
-      list_cameras.py      # 카메라 디바이스 목록
-      list_resolutions.py  # 해상도 목록
-    face_detection/
-      simple.py            # 얼굴 검출
-      simple_landmark.py   # 얼굴 랜드마크
-      transform_3d.py      # 3D 변환
-    pose/
-      simple.py            # 포즈 감지
-```
+vision sample은 `models/` 아래 기본 MediaPipe 자산을 요구한다.
 
-## Scripts Reference
-
-
-
-## Requirements
-
-- Python >= 3.11
-- MediaPipe >= 0.10.32
-- OpenCV >= 4.8
-- Pygame >= 2.5
-
-## voiceFlow ASR (miso_stt)
-
-`voiceFlow` ASR는 `miso_stt`를 벤더링해 3개 백엔드를 지원합니다.
-
-- `ct2`
-- `hf_generate`
-- `hf_pipeline`
-
-실행:
+- `models/blaze_face_short_range.tflite`
+- `models/face_landmarker.task`
+- `models/pose_landmarker.task`
+- `models/pose_landmarker_lite.task`
 
 ```bash
-uv run python -m voiceFlow.sample.asr_realtime
-uv run python -m voiceFlow.sample.audiomi_asr_realtime
+uv run nf-vision-models-download
+uv run nf-vision-models-download --list
+uv run nf-vision-models-download --force
+uv run nf-vision-models-download --only face-detector face-landmarker
+uv run nf-vision-models-download --only pose-full pose-lite
 ```
 
-UI에서 다음을 선택할 수 있습니다.
-- backend
-- model size
-- model path (optional)
-- accumulate step / max window (audiomi 샘플)
+## Direct Module Runs
 
-모델 지정 우선순위:
-1. model path
-2. model name(alias/HF ID)
+vision sample:
 
-주요 환경 변수:
-- `VOICEFLOW_STT_TEMPERATURE` (기본 `0.0`)
-- `VOICEFLOW_STT_CT2_VAD_FILTER` (기본 `false`)
-- `ENABLE_LOGGING` (`true`일 때만 `logs/` 저장)
+```bash
+uv run python -m visionflow.sample.camera.list_cameras
+uv run python -m visionflow.sample.camera.simple --camera-id 0 --width 1280 --height 720
+uv run python -m visionflow.sample.face_detection.simple --running-mode LIVE_STREAM --min-score 0.6
+uv run python -m visionflow.sample.pose.simple --running-mode LIVE_STREAM
+uv run python -m visionflow.sample.detect_test
+```
 
-`audiomi_asr_realtime` 누적 모드:
-- ingest/infer 스레드 분리로 수신과 추론 경로 분리
-- `step_s` 단위 청크 큐 누적 후 전체 버퍼 추론
-- `max_window_s` 초과 시 앞 청크 트림
-- 워밍업 진행률(`text/asr_status`)을 UI progress bar로 표시
-- 상태줄에 queue/infer 시간 표시
-- 모델명 + `cache root(abs)` 표시
-- 로깅 사용 시 추론 텍스트/오디오 쌍 저장(`logs/*.txt`, `logs/*.wav`)
+voice / ASR sample:
 
-CUDA 정책:
-- PyTorch CUDA wheel 경로(`pytorch-cu128`)를 사용합니다.
-- `nvidia-cublas-cu12`, `nvidia-cudnn-cu12` 직접 의존은 제거했습니다.
+```bash
+uv run python -m voiceFlow.sample.microphone_client --host 127.0.0.1 --port 26100 --duration 4
+uv run python -m neuroflow.app.asr_chunk_realtime
+uv run python -m neuroflow.app.audiomi_asr_chunk_realtime
+uv run python -m neuroflow.app.asr_stream_realtime
+```
 
-운영 가이드:
-- 의존성/락 파일 반영 후 `uv sync`로 환경을 재동기화하세요.
-- 락 업데이트가 필요하면 `uv lock` 후 `uv sync`를 권장합니다.
+## Environment
 
-HF LoRA 주의:
-- adapter-only 경로는 지원하지 않습니다.
-- 병합된 checkpoint 디렉토리를 model path로 지정하세요.
+`sample.env`는 현재 canonical 키 기준으로 정리돼 있다.
 
-통합 데모(`main.py`, pygame) 해상도 튜닝:
+chunk / batch 계열:
 
 ```env
-# 단일 설정 (권장): WxH 포맷
-CAMERA_RESOLUTION=1280x720
-
-# detection counts
-MAX_FACE=1
-MAX_POSE=1
+ASRFLOW_STT_BACKEND=qwen_transformers
+ASRFLOW_STT_MODEL=Qwen/Qwen3-ASR-0.6B
+ASRFLOW_STT_MODEL_PATH=
+ASRFLOW_STT_DEVICE=auto
+ASRFLOW_STT_FP16=true
+ASRFLOW_STT_LANGUAGE=auto
+ASRFLOW_STT_TASK=transcribe
+ASRFLOW_STT_BEAM_SIZE=5
+ASRFLOW_STT_MAX_NEW_TOKENS=256
+ASRFLOW_STT_MAX_INFERENCE_BATCH_SIZE=8
+ASRFLOW_STT_CHUNK_SEC=3.0
+ASRFLOW_STT_SAMPLERATE=16000
 ```
 
-`face + pose` 동시 추론에서는 해상도를 높일수록 FPS가 크게 떨어질 수 있습니다.
+native stream 계열:
 
-소스 점검 + `.env` 편집 유틸 (`deviceMngUI.py`):
-
-```bash
-uv run python deviceMngUI.py
+```env
+ASRFLOW_STREAM_MODEL=Qwen/Qwen3-ASR-0.6B
+ASRFLOW_STREAM_MODEL_PATH=
+ASRFLOW_STREAM_LANGUAGE=auto
+ASRFLOW_STREAM_CHUNK_SEC=2.0
+ASRFLOW_STREAM_SAMPLERATE=16000
+ASRFLOW_STREAM_MAX_NEW_TOKENS=512
+ASRFLOW_STREAM_UNFIXED_CHUNK_NUM=2
+ASRFLOW_STREAM_UNFIXED_TOKEN_NUM=5
+NF_ASR_STREAM_ENABLED=true
 ```
 
-카메라 입력 프리뷰, 마이크 RMS 게이지, `.env` 키/값 편집/저장을 한 UI에서 처리합니다.
-`DEVICE_PATH`, `CAMERA_ID`, `CAMERA_RESOLUTION`, `MIC_DEVICE`는 다이얼로그 선택기로 지정할 수 있습니다.
-`CAMERA_RESOLUTION`은 현재 선택된 카메라에서 프로빙된 지원 해상도 목록으로만 선택됩니다.
+ingress / network 계열:
 
-백엔드 가이드:
-- `hf_generate`, `hf_pipeline`: LoRA/파인튜닝 확장 대비 권장
-- `ct2`: 빠른 추론에 유리, GPU 초기화 실패 시 CPU fallback이 자동 적용될 수 있음
+```env
+NF_ASR_SERVER_HOST=0.0.0.0
+NF_ASR_SERVER_PORT=26100
+AUDIOMI_HOST=127.0.0.1
+AUDIOMI_PORT=26070
+AUDIOMI_CHECKCODE=20250918
+```
 
-## Keyboard Controls (detect_test)
+## Layout
 
-| Key | Action |
-|-----|--------|
-| `1` | Face Detection 토글 |
-| `2` | Face Landmark 토글 |
-| `3` | Pose Landmark 토글 |
-| `4` | 카메라 전환 (0 <-> 1) |
-| `H` | 도움말 토글 |
-| `ESC` | 종료 |
+```text
+src/
+  common/
+    contracts/
+    protocols/
+    runtime/
+    tools/
+  neuroflow/
+    app/
+  visionflow/
+    main.py
+    processors/
+    sample/
+    sources/
+    workers/
+  voiceFlow/
+    gateways/
+    main.py
+    sample/
+    sources/
+    utils/
+  asrFlow/
+    bootstrap.py
+    processors/
+    services/
+    workers/
+    vendors/
+    utils/
+```
+
+상세 구조는 [`_forAI/architecture.md`](_forAI/architecture.md), 현재 인벤토리는 [`_forAI/inventory.md`](_forAI/inventory.md)를 보면 된다.

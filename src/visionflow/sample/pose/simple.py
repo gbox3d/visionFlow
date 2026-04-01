@@ -9,7 +9,7 @@ import threading
 
 import pygame
 
-from visionflow.pipeline.bus import TopicBus
+from common.runtime.bus import TopicBus
 from visionflow.sources.camera_source import CameraSource
 from visionflow.utils.image import cv_bgr_to_pygame_surface
 
@@ -80,7 +80,7 @@ class Application:
             )
 
         pygame.init()
-        pygame.display.set_caption("VisionFlow - Pose Landmarker")
+        pygame.display.set_caption("NeuroFlow - Pose Landmarker")
 
         self.font = pygame.font.SysFont("Consolas", 18)
         self.small = pygame.font.SysFont("Consolas", 14)
@@ -177,7 +177,7 @@ class Application:
             if pose is not None:
                 infer_fps = float(pose.meta.get("infer_fps", 0.0))
 
-            line1 = "VisionFlow Pose Renderer"
+            line1 = "NeuroFlow Pose Renderer"
             line2 = f"disp / cam / infer = {disp_fps:.1f} / {cam_fps:.1f} / {infer_fps:.1f}"
 
             pad = 6
@@ -198,7 +198,7 @@ class Application:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="VisionFlow pose landmarker sample"
+        description="NeuroFlow pose landmarker sample"
     )
     parser.add_argument("--camera-id", type=int, default=0)
     parser.add_argument("--width", type=int, default=640)

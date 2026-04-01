@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional
 import cv2
 import mediapipe as mp
 
+from common.runtime.model_assets import require_model_file
 from visionflow.pipeline.packet import FramePacket
 
 
@@ -45,7 +46,7 @@ class FaceDetectorProcessor:
         opts["running_mode"] = rm
 
         # 필수 base_options
-        opts["base_options"] = BaseOptions(model_asset_path=model_path)
+        opts["base_options"] = BaseOptions(model_asset_path=require_model_file(model_path))
 
         self._rm = rm
         self._detector = FaceDetector.create_from_options(FaceDetectorOptions(**opts))

@@ -21,7 +21,7 @@ import threading
 
 import pygame
 
-from visionflow.pipeline.bus import TopicBus
+from common.runtime.bus import TopicBus
 from visionflow.sources.camera_source import CameraSource
 from visionflow.utils.image import cv_bgr_to_pygame_surface
 
@@ -67,7 +67,7 @@ class Application:
 
         # pygame setup (render only)
         pygame.init()
-        pygame.display.set_caption("VisionFlow - Camera Viewer")
+        pygame.display.set_caption("NeuroFlow - Camera Viewer")
 
         self.font = pygame.font.SysFont("Consolas", 18)
         self.small = pygame.font.SysFont("Consolas", 14)
@@ -150,7 +150,7 @@ class Application:
             meta = last_pkt.meta or {}
             cam_fps = float(meta.get("cam_fps", 0.0))
 
-            line1 = f"VisionFlow Renderer"
+            line1 = f"NeuroFlow Renderer"
             line2 = f"CAM {meta.get('camera_id','?')}  {meta.get('actual_width',0)}x{meta.get('actual_height',0)}"
             line3 = f"disp_fps / cam_fps = {disp_fps:.1f} / {cam_fps:.1f}"
 
@@ -176,11 +176,11 @@ class Application:
 def main():
     parser = argparse.ArgumentParser(
         description=(
-            "VisionFlow standard camera renderer\n\n"
+            "NeuroFlow standard camera renderer\n\n"
             "카메라 지정 방법:\n"
             "  --camera-id 0            인덱스 기반 (기본)\n"
             "  --device-path '\\\\?\\usb#vid_...'  device path 기반 (안정적)\n\n"
-            "device path는 vf-camera-list 로 확인할 수 있습니다."
+            "device path는 nf-vision-camera-list 로 확인할 수 있습니다."
         ),
         formatter_class=argparse.RawTextHelpFormatter,
     )

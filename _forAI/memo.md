@@ -1,31 +1,31 @@
 # NeuroFlow Memo
 
-## 현재 이 프로젝트를 보는 프레임
+## 현재 보는 프레임
 
-- `visionflow`는 이미 검증된 시각 파이프라인이다.
-- `voiceFlow`는 사실상 ASR/STT 코어 저장소다.
-- `common`과 `asrFlow`는 새 구조의 시작점이다.
-- `llmFlow`, `ttsFlow`, `backend`는 다음 단계에서 실제로 만들어야 한다.
+- `common`은 공용 기반층이다.
+- `voiceFlow`는 ingress/edge 계층이다.
+- `asrFlow`는 ASR 코어다.
+- `neuroflow.app`은 composition root다.
+- `chunk` 예제와 `stream` 예제는 분리됐다.
 
+## 현재 고정된 판단
 
-## 핵심 판단
-
-- 이 프로젝트는 앱보다 라이브러리와 서비스 조합 계층에 가깝다.
-- `ASR`와 `STT`는 외부 설명에서는 함께 써도 되지만 모듈 이름은 `asrFlow`로 통일하는 편이 낫다.
-- `voiceFlow`는 장기 표준 이름이라기보다 이전 자산 저장소로 다루는 편이 맞다.
-- `visionflow`는 억지로 합치지 말고 독립 축으로 유지하는 편이 안전하다.
-
+- `ASRFLOW_STT_*`는 chunk / batch 계열 설정이다.
+- `ASRFLOW_STREAM_*`는 native stream 계열 설정이다.
+- `nf-asr-stream-realtime`는 현재 `Qwen ASR + qwen_transformers` 전용 경로다.
+- `nf-asr-server`는 `voiceFlow.gateways.asr_ingress_server`를 canonical server로 쓴다.
+- `NF_ASR_STREAM_ENABLED=true`면 NFCP server가 streaming command도 함께 노출한다.
+- native stream 경로는 현재 기본 dependency 안에서 동작한다.
 
 ## 열린 질문
 
-- `TopicBus`를 `common`으로 승격할지, 아니면 `visionflow` 내부 패턴으로만 남길지?
-- `backend` 1차 버전에서 streaming partial event까지 넣을지, 단건 request/result부터 갈지?
-- `llmFlow`의 시작 provider를 로컬 모델로 둘지 API 모델로 둘지?
-- 루트 `README.md`와 `pyproject.toml` 설명을 언제 현재 비전에 맞게 갱신할지?
-
+- `asrFlow/contracts`를 언제 실제 `StreamingSession` / `AsrEngine` 계약으로 채울지?
+- `qwen_streaming_asr.py`를 stream vendor/service 계층으로 더 아래로 내릴지?
+- stream 예제를 앞으로 Qwen 외 다른 모델 family까지 넓힐지?
+- server streaming path에 partial/final 외 운영 메타를 얼마나 더 실을지?
 
 ## 다음 작업 추천
 
-- `voiceFlow -> asrFlow` 실제 이동 목록을 파일 단위로 확정
-- `llmFlow` 최소 디렉터리와 인터페이스 초안 생성
-- 루트 문서와 패키지 설명의 방향 불일치 해소
+- `stream` 쪽에 실제 session contract를 도입
+- `qwen_streaming_asr.py`의 계층 위치를 다시 판단
+- README와 `_forAI`를 현재 canonical 구조 기준으로 계속 짧게 유지

@@ -1,4 +1,4 @@
-"""VisionFlow Sample Launcher"""
+"""NeuroFlow Sample Launcher"""
 
 from __future__ import annotations
 
@@ -54,22 +54,13 @@ SAMPLES = [
         "category": "Camera",
         "items": [
             ("camera.simple", "visionflow.sample.camera.simple", "기본 카메라 뷰어"),
-            ("camera.dual_cam", "visionflow.sample.camera.dual_cam", "듀얼 카메라"),
             ("camera.list_cameras", "visionflow.sample.camera.list_cameras", "카메라 디바이스 목록"),
-            ("camera.list_resolutions", "visionflow.sample.camera.list_resolutions", "카메라 해상도 목록"),
         ],
     },
     {
-        "category": "Face Detection",
+        "category": "Vision",
         "items": [
             ("face_detection.simple", "visionflow.sample.face_detection.simple", "얼굴 검출"),
-            ("face_detection.simple_landmark", "visionflow.sample.face_detection.simple_landmark", "얼굴 랜드마크"),
-            ("face_detection.transform_3d", "visionflow.sample.face_detection.transform_3d", "3D 얼굴 변환"),
-        ],
-    },
-    {
-        "category": "Pose",
-        "items": [
             ("pose.simple", "visionflow.sample.pose.simple", "포즈 감지"),
         ],
     },
@@ -85,7 +76,7 @@ SAMPLES = [
 def _print_menu():
     print()
     print("=" * 50)
-    print("  VisionFlow Sample Launcher")
+    print("  NeuroFlow Sample Launcher")
     print("=" * 50)
 
     idx = 1

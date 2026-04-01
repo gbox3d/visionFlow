@@ -6,7 +6,7 @@ from typing import Optional
 
 import cv2
 
-from visionflow.pipeline.bus import TopicBus
+from common.runtime.bus import TopicBus
 from visionflow.pipeline.packet import FramePacket
 from visionflow.utils.etc import normalize_device_path_key
 

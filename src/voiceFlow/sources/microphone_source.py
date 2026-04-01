@@ -7,8 +7,8 @@ from typing import Any, Optional
 import numpy as np
 import sounddevice as sd
 
-from visionflow.pipeline.bus import TopicBus
-from voiceFlow.pipeline.packet import AudioPacket
+from common.runtime.bus import TopicBus
+from common.contracts.packets import AudioPacket
 
 
 class MicrophoneSource:

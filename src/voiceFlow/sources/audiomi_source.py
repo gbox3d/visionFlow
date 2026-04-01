@@ -24,8 +24,8 @@ from typing import Optional
 
 import numpy as np
 
-from visionflow.pipeline.bus import TopicBus
-from voiceFlow.pipeline.packet import AudioPacket
+from common.runtime.bus import TopicBus
+from common.contracts.packets import AudioPacket
 
 REQUEST_PING = 99
 CMD_LOOPBACK = 0x01

@@ -13,6 +13,7 @@ from typing import Any, Dict, Optional
 import cv2
 import mediapipe as mp
 
+from common.runtime.model_assets import require_model_file
 from visionflow.pipeline.packet import FramePacket
 
 
@@ -50,7 +51,7 @@ class PoseLandmarkerProcessor:
 
         opts = dict(model_options)
         opts["running_mode"] = rm
-        opts["base_options"] = BaseOptions(model_asset_path=model_path)
+        opts["base_options"] = BaseOptions(model_asset_path=require_model_file(model_path))
 
         # Pose 옵션
         opts.setdefault("num_poses", 1)

@@ -107,7 +107,7 @@ def main():
 
     parser = argparse.ArgumentParser(
         description=(
-            "visionflow camera device lister\n\n"
+            "NeuroFlow camera device lister\n\n"
             "카메라 디바이스 목록을 출력합니다.\n"
             "기본: 하드웨어 정보 포함 (cv2-enumerate-cameras)\n"
             "--probe 옵션: 인덱스 순회 방식 (OpenCV 직접 탐색)"
@@ -135,7 +135,7 @@ def main():
 
     args = parser.parse_args()
 
-    print("=== visionflow camera device list ===")
+    print("=== NeuroFlow camera device list ===")
     print()
 
     if args.probe:

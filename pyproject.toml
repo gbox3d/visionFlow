@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "NeuroFlow"
-version = "0.1.0"
-description = "Realtime vision pipeline (camera → processors → render)"
+version = "0.2.0"
+description = "Multimodal runtime with canonical NFCP ASR server, voice ingress, and vision samples"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -19,6 +19,7 @@ dependencies = [
     "pygame>=2.5",
     "pyside6>=6.10.2",
     "python-dotenv>=1.2.1",
+    "qwen-asr>=0.0.6",
     "scipy>=1.11.0",
     "soundfile>=0.13.1",
     "sounddevice>=0.4.6",
@@ -36,12 +37,19 @@ explicit = true
 torch = { index = "pytorch-cu128" }
 
 [project.scripts]
-visionflow = "visionflow.main:main"
-asrflow-server = "asrFlow.gateways.tcp_asr_server:main"
-asrflow-mic-client = "asrFlow.sample.microphone_client:main"
+nf-vision = "visionflow.main:main"
+nf-vision-models-download = "common.tools.download_mediapipe_models:main"
+nf-asr-server = "neuroflow.app.asr_server:main"
+
+nf-voice = "voiceFlow.main:main"
+nf-voice-mic-client = "voiceFlow.sample.microphone_client:main"
+nf-asr-chunk-realtime = "neuroflow.app.asr_chunk_realtime:main"
+nf-audiomi-asr-chunk-realtime = "neuroflow.app.audiomi_asr_chunk_realtime:main"
+nf-asr-stream-realtime = "neuroflow.app.asr_stream_realtime:main"
+
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/common", "src/asrFlow", "src/visionflow", "src/voiceFlow"]
+packages = ["src/common", "src/asrFlow", "src/neuroflow", "src/visionflow", "src/voiceFlow"]
 
 [dependency-groups]
 dev = [
