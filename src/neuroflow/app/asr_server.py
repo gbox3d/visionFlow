@@ -83,7 +83,11 @@ def main() -> None:
 
     server, env_result = build_server(args.env, host=args.host, port=args.port)
     _print_env_load_result(env_result)
-    asyncio.run(server.run())
+    try:
+        asyncio.run(server.run())
+    except KeyboardInterrupt:
+        # PM2 reload/restart during serve_forever can raise KeyboardInterrupt on shutdown.
+        print("[NeuroFlow ASR] shutdown requested")
 
 
 __all__ = ["build_server", "main", "resolve_server_host", "resolve_server_port"]

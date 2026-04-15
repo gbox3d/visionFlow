@@ -16,11 +16,12 @@
 
 1. [아키텍처 개요](#아키텍처-개요)
 2. [설치](#설치)
-3. [Public Entry Points](#public-entry-points)
+3. [PM2 통합 관리](#pm2-통합-관리)
+4. [Public Entry Points](#public-entry-points)
    - [visionFlow](#visionflow)
    - [voiceFlow](#voiceflow)
    - [asrFlow](#asrflow)
-4. [사용법 상세](#사용법-상세)
+5. [사용법 상세](#사용법-상세)
    - [nf-vision-camhub (카메라 허브 서버)](#nf-vision-camhub-카메라-허브-서버)
    - [nf-vision-camhub-client (카메라 클라이언트)](#nf-vision-camhub-client-카메라-클라이언트)
    - [nf-asr-server (ASR 서버)](#nf-asr-server-asr-서버)
@@ -31,10 +32,10 @@
    - [nf-vision (Vision 샘플 런처)](#nf-vision-vision-샘플-런처)
    - [nf-vision-models-download (모델 다운로드)](#nf-vision-models-download-모델-다운로드)
    - [nf-voice (Voice 샘플 런처)](#nf-voice-voice-샘플-런처)
-5. [ASR Runtime Split](#asr-runtime-split)
-6. [NFCP 프로토콜](#nfcp-프로토콜)
-7. [환경 변수](#환경-변수)
-8. [Layout](#layout)
+6. [ASR Runtime Split](#asr-runtime-split)
+7. [NFCP 프로토콜](#nfcp-프로토콜)
+8. [환경 변수](#환경-변수)
+9. [Layout](#layout)
 
 ---
 
@@ -62,6 +63,7 @@ uv run nf-vision-models-download
 
 - Python `>=3.11` 기준
 - `.env`가 필요하면 `sample.env`를 복사하여 프로젝트 루트에 배치한다
+
 
 ---
 
@@ -188,6 +190,9 @@ uv run nf-asr-server --env ./my_config.env
 
 # 주소/포트 오버라이드
 uv run nf-asr-server --host 127.0.0.1 --port 30000
+
+#pm2 통합 예시
+pm2 start bash --name nf-asr-server --cwd /home/miso/work/NeuroFlow -- -lc 'uv run nf-asr-server --port 21861'
 ```
 
 CLI 인자:
