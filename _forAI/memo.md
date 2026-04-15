@@ -8,6 +8,17 @@
 - `neuroflow.app`은 composition root다.
 - `chunk` 예제와 `stream` 예제는 분리됐다.
 
+## 프로토콜 표준: NFCP TCP
+
+**새 서버를 만들 때는 반드시 NFCP TCP 방식을 사용한다.** REST(FastAPI, Flask 등)는 쓰지 않는다.
+
+- 기준 패턴: `voiceFlow.gateways.asr_ingress_server.AsrIngressServer`
+- 프로토콜: `common.protocols.nfcp` (`read_frame` / `write_frame` / `build_*_frame`)
+- 모든 서버는 `PING`, `DESCRIBE` 핸들러를 기본 포함한다
+- dispatch loop → handle_client → run 구조를 따른다
+- 추가 의존성(FastAPI, uvicorn 등) 없이 asyncio + NFCP만으로 구현한다
+- 참고 구현: `CamHubServer` (`visionflow.camhub.server`)
+
 ## 현재 고정된 판단
 
 - `ASRFLOW_STT_*`는 chunk / batch 계열 설정이다.

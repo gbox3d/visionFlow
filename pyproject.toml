@@ -46,6 +46,8 @@ nf-voice-mic-client = "voiceFlow.sample.microphone_client:main"
 nf-asr-chunk-realtime = "neuroflow.app.asr_chunk_realtime:main"
 nf-audiomi-asr-chunk-realtime = "neuroflow.app.audiomi_asr_chunk_realtime:main"
 nf-asr-stream-realtime = "neuroflow.app.asr_stream_realtime:main"
+nf-vision-camhub = "visionflow.camhub.main:main"
+nf-vision-camhub-client = "visionflow.camhub.camera_client:main"
 
 
 [tool.hatch.build.targets.wheel]

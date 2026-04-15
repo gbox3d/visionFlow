@@ -1,5 +1,21 @@
 # _forAI Guide
 
+## 목차
+
+1. [한 줄 요약](#한-줄-요약)
+2. [먼저 볼 문서](#먼저-볼-문서)
+3. [현재 canonical 구조](#현재-canonical-구조)
+4. [현재 public entry points](#현재-public-entry-points)
+   - [visionFlow](#visionflow)
+   - [voiceFlow](#voiceflow)
+   - [asrFlow](#asrflow)
+5. [지금 핵심 경계](#지금-핵심-경계)
+6. [문서별 역할](#문서별-역할)
+7. [유지 규칙](#유지-규칙)
+8. [주의](#주의)
+
+---
+
 ## 한 줄 요약
 
 현재 `NeuroFlow`는 아래 5축으로 보는 것이 가장 정확하다.
@@ -13,7 +29,7 @@
 - `neuroflow.app`
   - composition root, app entry point
 - `visionflow`
-  - vision runtime과 sample
+  - vision runtime, camhub, sample
 
 ## 먼저 볼 문서
 
@@ -38,19 +54,35 @@ neuroflow.app
   -> asr_server / asr_chunk_realtime / audiomi_asr_chunk_realtime / asr_stream_realtime
 
 visionflow
-  -> camera / mediapipe / samples
+  -> camera / mediapipe / camhub / samples
 ```
 
 ## 현재 public entry points
 
-- `uv run nf-vision`
-- `uv run nf-vision-models-download`
-- `uv run nf-voice`
-- `uv run nf-voice-mic-client`
-- `uv run nf-asr-server`
-- `uv run nf-asr-chunk-realtime`
-- `uv run nf-audiomi-asr-chunk-realtime`
-- `uv run nf-asr-stream-realtime`
+### visionFlow
+
+| 커맨드 | 역할 |
+| --- | --- |
+| `uv run nf-vision` | vision sample launcher |
+| `uv run nf-vision-models-download` | MediaPipe 기본 모델 다운로드 |
+| `uv run nf-vision-camhub` | 카메라 이미지 중계 허브 서버 (FastAPI) |
+| `uv run nf-vision-camhub-client` | 로컬 카메라 → camhub 전송 클라이언트 |
+
+### voiceFlow
+
+| 커맨드 | 역할 |
+| --- | --- |
+| `uv run nf-voice` | voice sample launcher |
+| `uv run nf-voice-mic-client` | 마이크 녹음 후 NFCP ASR ingress 요청 |
+
+### asrFlow
+
+| 커맨드 | 역할 |
+| --- | --- |
+| `uv run nf-asr-server` | canonical NFCP ASR 서버 |
+| `uv run nf-asr-chunk-realtime` | 로컬 마이크 chunk ASR UI |
+| `uv run nf-audiomi-asr-chunk-realtime` | audioMi accumulate chunk ASR UI |
+| `uv run nf-asr-stream-realtime` | Qwen native streaming UI |
 
 ## 지금 핵심 경계
 
@@ -62,18 +94,21 @@ visionflow
 
 ## 문서별 역할
 
-- [architecture.md](./architecture.md)
-  - 구조 도표와 실행 흐름
-- [inventory.md](./inventory.md)
-  - 현재 repo의 실제 표면과 canonical 파일 인벤토리
-- [memo.md](./memo.md)
-  - 남은 결정 포인트
-- [dev_log.md](./dev_log.md)
-  - 실제 정리 작업 기록
-- [plan.md](./plan.md)
-  - 과거 확장 계획과 장기 메모
-- [migration_map.md](./migration_map.md)
-  - 과거 migration 기록
+| 문서 | 역할 |
+| --- | --- |
+| [architecture.md](./architecture.md) | 구조 도표와 실행 흐름 |
+| [inventory.md](./inventory.md) | 현재 repo의 실제 표면과 canonical 파일 인벤토리 |
+| [memo.md](./memo.md) | 남은 결정 포인트 |
+| [dev_log.md](./dev_log.md) | 실제 정리 작업 기록 |
+| [plan.md](./plan.md) | 과거 확장 계획과 장기 메모 |
+| [migration_map.md](./migration_map.md) | 과거 migration 기록 |
+
+## 유지 규칙
+
+- 새 entry point가 추가되면 해당 flow 섹션의 테이블에 행을 추가한다.
+- 계획이 아닌 참고 정보는 `plan.md`가 아니라 `memo.md`에 둔다.
+- 저장소 구조나 실행 명령이 바뀌면 `inventory.md`를 먼저 갱신한다.
+- 작업 이력은 날짜를 붙여 `dev_log.md`에만 남긴다.
 
 ## 주의
 

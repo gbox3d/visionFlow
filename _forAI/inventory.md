@@ -28,6 +28,8 @@
 | `uv run nf-asr-chunk-realtime` | `Keep` | 로컬 마이크 chunk ASR UI |
 | `uv run nf-audiomi-asr-chunk-realtime` | `Keep` | audioMi accumulate chunk ASR UI |
 | `uv run nf-asr-stream-realtime` | `Keep` | Qwen native streaming UI |
+| `uv run nf-vision-camhub` | `Keep` | 카메라 이미지 중계 허브 서버 (FastAPI) |
+| `uv run nf-vision-camhub-client` | `Keep` | camhub 전송 카메라 클라이언트 |
 
 ## 3. App Entry Point Map
 
@@ -85,6 +87,15 @@
 | `src/neuroflow/app/asr_stream_realtime.py` | stream UI |
 | `src/neuroflow/app/asr_model_catalog.py` | model/backend 분류 |
 | `src/neuroflow/app/asr_ui_common.py` | UI 공용 gauge/bridge |
+
+### vision camhub
+
+| 파일 | 역할 |
+| --- | --- |
+| `src/visionflow/camhub/hub.py` | `FrameHub` 인메모리 프레임 저장소 |
+| `src/visionflow/camhub/server.py` | FastAPI 카메라 허브 서버 |
+| `src/visionflow/camhub/main.py` | `nf-vision-camhub` entry point |
+| `src/visionflow/camhub/camera_client.py` | 로컬 카메라 → hub 전송 클라이언트 |
 
 ## 5. Model Experiment Split
 

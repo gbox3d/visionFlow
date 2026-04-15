@@ -1,5 +1,27 @@
 # Dev Log
 
+## 2026-04-15
+
+### nf-vision-camhub 서버 신규 생성
+
+- `src/visionflow/camhub/` 모듈을 새로 만들었다.
+  - `hub.py`: `FrameHub` — 카메라 이름별로 최신 JPEG 프레임을 인메모리 관리하는 thread-safe 저장소
+  - `server.py`: NFCP TCP 기반 `CamHubServer` — `AsrIngressServer`와 같은 패턴
+  - `main.py`: `nf-vision-camhub` entry point (asyncio TCP 서버)
+  - `camera_client.py`: 로컬 카메라에서 캡처 → NFCP `VISION_UPLOAD_FRAME`으로 전송하는 클라이언트
+- `common/protocols/nfcp.py`에 새 커맨드 추가: `VISION_UPLOAD_FRAME(5003)`, `VISION_GET_FRAME(5004)`, `VISION_LIST_CAMERAS(5005)`
+- `nf-vision-camhub`, `nf-vision-camhub-client` public script 등록
+- `sample.env`에 `NF_CAMHUB_*` 설정 블록 추가
+- REST(FastAPI) 대신 NFCP TCP 방식을 채택 — 이후 모든 새 서버의 표준으로 확정
+
+### NFCP 커맨드 설계
+
+| Command | Code | 역할 |
+| --- | --- | --- |
+| `VISION_UPLOAD_FRAME` | 5003 | 카메라 클라이언트가 JPEG 프레임 업로드 (meta: name, width, height / data: JPEG) |
+| `VISION_GET_FRAME` | 5004 | AI 클라이언트가 최신 프레임 조회 (meta: name → data: JPEG) |
+| `VISION_LIST_CAMERAS` | 5005 | 등록된 카메라 목록 + 메타 |
+
 ## 2026-04-01
 
 ### ASR chunk / stream 분리 + 문서 정리
