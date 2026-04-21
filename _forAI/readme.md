@@ -2,19 +2,37 @@
 
 ## 목차
 
-1. [한 줄 요약](#한-줄-요약)
-2. [먼저 볼 문서](#먼저-볼-문서)
-3. [현재 canonical 구조](#현재-canonical-구조)
-4. [현재 public entry points](#현재-public-entry-points)
+1. [최근 구현 변경](#최근-구현-변경)
+2. [한 줄 요약](#한-줄-요약)
+3. [먼저 볼 문서](#먼저-볼-문서)
+4. [현재 canonical 구조](#현재-canonical-구조)
+5. [현재 public entry points](#현재-public-entry-points)
    - [visionFlow](#visionflow)
    - [voiceFlow](#voiceflow)
    - [asrFlow](#asrflow)
-5. [지금 핵심 경계](#지금-핵심-경계)
-6. [문서별 역할](#문서별-역할)
-7. [유지 규칙](#유지-규칙)
-8. [주의](#주의)
+6. [지금 핵심 경계](#지금-핵심-경계)
+7. [문서별 역할](#문서별-역할)
+8. [유지 규칙](#유지-규칙)
+9. [주의](#주의)
 
 ---
+
+## 최근 구현 변경
+
+### 구현사항
+
+- `nf-asr-server` 공통 NFCP 커맨드에 `SERVER_INFO(102)`를 추가했다.
+- streaming 경로에 `ASR_CLEAR_BUFFER(1003)`를 추가해 버퍼와 세션 상태를 명시적으로 초기화할 수 있게 했다.
+- `asrFlow.processors.qwen_streaming_asr`는 bounded audio accumulation과 `ASRFLOW_STREAM_MAX_ACCUM_SAMPLES` 설정을 받도록 정리했다.
+- 패키지 버전과 문서를 `0.2.1` 기준으로 맞췄다.
+
+### 차이점
+
+| 항목 | 이전 | 현재 |
+| --- | --- | --- |
+| 운영 메타 조회 | `DESCRIBE`에 의존 | `SERVER_INFO(102)`로 분리, `DESCRIBE`는 capability 중심 응답으로 정리 |
+| stream 상태 초기화 | 세션 종료 시점에만 정리 가능 | `ASR_CLEAR_BUFFER(1003)`로 명시적 초기화 가능 |
+| 누적 오디오 보관 | 전체 배열 누적 | 오래된 샘플을 밀어내는 bounded queue |
 
 ## 한 줄 요약
 
@@ -35,8 +53,8 @@
 
 1. [architecture.md](./architecture.md)
 2. [inventory.md](./inventory.md)
-3. [memo.md](./memo.md)
-4. [dev_log.md](./dev_log.md)
+3. [dev_log.md](./dev_log.md)
+4. [memo.md](./memo.md)
 
 ## 현재 canonical 구조
 

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import time
 from typing import Any
 
 import numpy as np
@@ -63,15 +65,22 @@ class AsrIngressServer:
         self.max_data_bytes = int(max_data_bytes)
         self._server: asyncio.AbstractServer | None = None
         self._stream_lock = asyncio.Lock()
+        self._started_at_ms = int(time.time() * 1000)
 
     # ------------------------------------------------------------------
     # Service metadata
     # ------------------------------------------------------------------
 
     def _service_meta(self) -> dict[str, Any]:
-        commands = [int(CommandCode.PING), int(CommandCode.DESCRIBE), int(CommandCode.ASR_TRANSCRIBE)]
+        commands = [
+            int(CommandCode.PING),
+            int(CommandCode.DESCRIBE),
+            int(CommandCode.SERVER_INFO),
+            int(CommandCode.ASR_TRANSCRIBE),
+        ]
         if self.streaming_processor is not None:
             commands.append(int(CommandCode.ASR_TRANSCRIBE_STREAM))
+            commands.append(int(CommandCode.ASR_CLEAR_BUFFER))
         meta = {
             "service": "voiceFlow",
             "role": "asr_ingress_server",
@@ -85,6 +94,21 @@ class AsrIngressServer:
         meta.setdefault("role", "asr_ingress_server")
         meta.setdefault("service_type", int(ServiceType.ASR))
         meta.setdefault("ready", True)
+        return meta
+
+    def _server_info_meta(self) -> dict[str, Any]:
+        now_ms = int(time.time() * 1000)
+        meta = self._service_meta()
+        meta.update(
+            {
+                "protocol": "NFCP/1.0",
+                "pid": os.getpid(),
+                "host": self.host,
+                "port": self.port,
+                "uptime_ms": max(0, now_ms - self._started_at_ms),
+                "streaming": self.streaming_processor is not None,
+            }
+        )
         return meta
 
     # ------------------------------------------------------------------
@@ -101,12 +125,10 @@ class AsrIngressServer:
         await write_frame(writer, reply)
 
     async def _send_describe(self, writer, frame: Frame) -> None:
-        meta = self._service_meta()
+        meta = self._server_info_meta()
         meta.update(
             {
-                "protocol": "NFCP/1.0",
                 "supported_audio_formats": ["wav", "pcm_s16le", "mp3", "webm", "mp4"],
-                "streaming": self.streaming_processor is not None,
                 "defaults": {
                     "samplerate": 16000,
                     "channels": 1,
@@ -117,6 +139,15 @@ class AsrIngressServer:
         reply = build_result_frame(
             frame.header,
             meta=meta,
+            status_code=StatusCode.COMPLETED,
+            sequence_no=0,
+        )
+        await write_frame(writer, reply)
+
+    async def _send_server_info(self, writer, frame: Frame) -> None:
+        reply = build_result_frame(
+            frame.header,
+            meta=self._server_info_meta(),
             status_code=StatusCode.COMPLETED,
             sequence_no=0,
         )
@@ -207,6 +238,50 @@ class AsrIngressServer:
     # Streaming ASR_TRANSCRIBE_STREAM
     # ------------------------------------------------------------------
 
+    async def _handle_clear_buffer(self, writer, frame: Frame, stream_state: dict) -> dict:
+        proc = self.streaming_processor
+        if proc is None:
+            await write_frame(
+                writer,
+                build_error_frame(
+                    frame.header,
+                    status_code=StatusCode.UNSUPPORTED_COMMAND,
+                    message="streaming processor not configured",
+                ),
+            )
+            return stream_state
+
+        try:
+            async with self._stream_lock:
+                await asyncio.to_thread(proc.reset)
+        except Exception as exc:
+            await write_frame(
+                writer,
+                build_error_frame(
+                    frame.header,
+                    status_code=StatusCode.INTERNAL_ERROR,
+                    message=f"buffer clear failed: {exc}",
+                ),
+            )
+            return stream_state
+
+        updated_state = {
+            "active": False,
+            "samplerate": stream_state.get("samplerate", 16000),
+            "channels": stream_state.get("channels", 1),
+            "seq": 0,
+        }
+        await write_frame(
+            writer,
+            build_result_frame(
+                frame.header,
+                meta={"service": "voiceFlow", "state": "buffer_cleared", "stream_active": False},
+                status_code=StatusCode.COMPLETED,
+                sequence_no=0,
+            ),
+        )
+        return updated_state
+
     async def _handle_stream(self, writer, frame: Frame, stream_state: dict) -> dict:
         """Handle one frame of a streaming session. Returns updated stream_state."""
         proc = self.streaming_processor
@@ -232,8 +307,9 @@ class AsrIngressServer:
                 return stream_state
 
             # Reset processor state for new session
-            await asyncio.to_thread(proc.reset)
-            await asyncio.to_thread(proc.warmup)
+            async with self._stream_lock:
+                await asyncio.to_thread(proc.reset)
+                await asyncio.to_thread(proc.warmup)
 
             stream_state = {
                 "active": True,
@@ -262,7 +338,10 @@ class AsrIngressServer:
 
             seq = stream_state["seq"] + 1
             try:
-                result = await asyncio.to_thread(proc.flush, seq=seq, source_id="stream")
+                async with self._stream_lock:
+                    result = await asyncio.to_thread(proc.flush, seq=seq, source_id="stream")
+                    # Clear residual state after final emission.
+                    await asyncio.to_thread(proc.reset)
             except Exception as exc:
                 await write_frame(writer, build_error_frame(
                     frame.header,
@@ -318,9 +397,14 @@ class AsrIngressServer:
         seq = stream_state["seq"]
 
         try:
-            result = await asyncio.to_thread(
-                proc.feed_audio, audio_f32, samplerate=stream_state["samplerate"], seq=seq, source_id="stream",
-            )
+            async with self._stream_lock:
+                result = await asyncio.to_thread(
+                    proc.feed_audio,
+                    audio_f32,
+                    samplerate=stream_state["samplerate"],
+                    seq=seq,
+                    source_id="stream",
+                )
         except Exception as exc:
             await write_frame(writer, build_error_frame(
                 frame.header,
@@ -389,10 +473,14 @@ class AsrIngressServer:
                 await self._send_ping(writer, frame)
             elif command == int(CommandCode.DESCRIBE):
                 await self._send_describe(writer, frame)
+            elif command == int(CommandCode.SERVER_INFO):
+                await self._send_server_info(writer, frame)
             elif command == int(CommandCode.ASR_TRANSCRIBE):
                 await self._handle_transcribe(writer, frame)
             elif command == int(CommandCode.ASR_TRANSCRIBE_STREAM):
                 stream_state = await self._handle_stream(writer, frame, stream_state)
+            elif command == int(CommandCode.ASR_CLEAR_BUFFER):
+                stream_state = await self._handle_clear_buffer(writer, frame, stream_state)
             else:
                 await write_frame(
                     writer,

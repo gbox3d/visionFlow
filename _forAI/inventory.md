@@ -1,8 +1,29 @@
 # NeuroFlow Inventory
 
+## 목차
+
+1. [목적](#목적)
+2. [최근 변경 구현사항](#최근-변경-구현사항)
+3. [1. 실제 실행 표면](#1-실제-실행-표면)
+4. [2. Public Commands](#2-public-commands)
+5. [3. App Entry Point Map](#3-app-entry-point-map)
+6. [4. Canonical Files](#4-canonical-files)
+7. [5. Model Experiment Split](#5-model-experiment-split)
+8. [6. Live Compatibility Surface](#6-live-compatibility-surface)
+9. [7. 설치 메모](#7-설치-메모)
+
 ## 목적
 
 현재 repo에서 실제로 쓰는 entry point, canonical 파일, 남아 있는 compatibility 표면을 빠르게 확인하기 위한 인벤토리다.
+
+## 최근 변경 구현사항
+
+| 구현사항 | 관련 파일 | 이전 대비 차이 |
+| --- | --- | --- |
+| NFCP server metadata 조회 | `src/common/protocols/nfcp.py`, `src/common/protocols/common_protocol.md`, `src/voiceFlow/gateways/asr_ingress_server.py` | `DESCRIBE` 응답 의존에서 `SERVER_INFO(102)` 별도 조회로 분리 |
+| streaming buffer clear command | `src/common/protocols/nfcp.py`, `src/voiceFlow/gateways/asr_ingress_server.py`, `README.md` | 세션 종료 외 수동 초기화 부재에서 `ASR_CLEAR_BUFFER(1003)` 제공으로 변경 |
+| bounded audio accumulation | `src/asrFlow/processors/qwen_streaming_asr.py`, `src/neuroflow/app/asr_server.py`, `sample.env` | 전체 배열 누적에서 `ASRFLOW_STREAM_MAX_ACCUM_SAMPLES` 기반 bounded queue로 변경 |
+| version/env/docs sync | `pyproject.toml`, `src/neuroflow/__init__.py`, `sample.env`, `README.md` | `0.2.0`/구 설정 문서에서 `0.2.1`/최신 옵션 반영으로 갱신 |
 
 ## 1. 실제 실행 표면
 

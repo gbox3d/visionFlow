@@ -225,6 +225,7 @@ typedef struct {
 | `99` | `PING` | 모든 서버 필수 |
 | `100` | `HEALTH` | 상세 상태 질의 |
 | `101` | `DESCRIBE` | capabilities 조회 |
+| `102` | `SERVER_INFO` | 버전/호스트/포트/uptime 등 서버 메타 조회 |
 
 ### 8.2 ASR
 
@@ -232,6 +233,7 @@ typedef struct {
 | ---: | --- | --- |
 | `1001` | `ASR_TRANSCRIBE` | 단건 음성 -> 텍스트 |
 | `1002` | `ASR_TRANSCRIBE_STREAM` | 스트림/청크 입력 |
+| `1003` | `ASR_CLEAR_BUFFER` | 서버 내 ASR 스트리밍 버퍼/세션 상태 초기화 |
 
 ### 8.3 LLM
 

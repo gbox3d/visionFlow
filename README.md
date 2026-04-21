@@ -1,27 +1,17 @@
 # NeuroFlow
 
-`NeuroFlow`는 vision, audio, ASR을 한 저장소에서 운영하는 멀티모달 런타임이다.
-
-## 이 문서를 처음 보는 사람을 위한 지침
-
-1. **설치**: `uv sync` → `uv run nf-vision-models-download` 순서로 실행한다.
-2. **환경 설정**: `sample.env`를 복사하여 프로젝트 루트에 `.env`로 배치한다.
-3. **프로토콜**: 모든 서버 간 통신은 **NFCP TCP** 기반이다. REST/HTTP는 사용하지 않는다.
-4. **구조 파악**: 코드 구조와 아키텍처는 [`_forAI/`](_forAI/) 디렉터리 문서를 먼저 읽는다.
-5. **새 서버 추가 시**: `common.protocols.nfcp`의 `read_frame`/`write_frame`을 사용하고, `PING`/`DESCRIBE` 핸들러를 반드시 포함한다. 참고 구현은 `AsrIngressServer`와 `CamHubServer`다.
-
----
-
 ## 목차
 
-1. [아키텍처 개요](#아키텍처-개요)
-2. [설치](#설치)
-3. [PM2 통합 관리](#pm2-통합-관리)
-4. [Public Entry Points](#public-entry-points)
+1. [최근 구현 변경](#최근-구현-변경)
+2. [이 문서를 처음 보는 사람을 위한 지침](#이-문서를-처음-보는-사람을-위한-지침)
+3. [아키텍처 개요](#아키텍처-개요)
+4. [설치](#설치)
+5. [PM2 통합 관리](#pm2-통합-관리)
+6. [Public Entry Points](#public-entry-points)
    - [visionFlow](#visionflow)
    - [voiceFlow](#voiceflow)
    - [asrFlow](#asrflow)
-5. [사용법 상세](#사용법-상세)
+7. [사용법 상세](#사용법-상세)
    - [nf-vision-camhub (카메라 허브 서버)](#nf-vision-camhub-카메라-허브-서버)
    - [nf-vision-camhub-client (카메라 클라이언트)](#nf-vision-camhub-client-카메라-클라이언트)
    - [nf-asr-server (ASR 서버)](#nf-asr-server-asr-서버)
@@ -32,10 +22,40 @@
    - [nf-vision (Vision 샘플 런처)](#nf-vision-vision-샘플-런처)
    - [nf-vision-models-download (모델 다운로드)](#nf-vision-models-download-모델-다운로드)
    - [nf-voice (Voice 샘플 런처)](#nf-voice-voice-샘플-런처)
-6. [ASR Runtime Split](#asr-runtime-split)
-7. [NFCP 프로토콜](#nfcp-프로토콜)
-8. [환경 변수](#환경-변수)
-9. [Layout](#layout)
+8. [ASR Runtime Split](#asr-runtime-split)
+9. [NFCP 프로토콜](#nfcp-프로토콜)
+10. [환경 변수](#환경-변수)
+11. [Layout](#layout)
+
+---
+
+`NeuroFlow`는 vision, audio, ASR을 한 저장소에서 운영하는 멀티모달 런타임이다.
+
+## 최근 구현 변경
+
+### 구현사항
+
+- `SERVER_INFO(102)`를 추가해 NFCP ASR 서버의 `version`, `host`, `port`, `pid`, `uptime_ms`, `streaming`, `commands`를 별도 조회할 수 있게 했다.
+- `ASR_CLEAR_BUFFER(1003)`를 추가해 streaming processor의 버퍼/세션 상태를 서버에서 즉시 초기화할 수 있게 했다.
+- `QwenStreamingAsrProcessor`는 누적 오디오를 bounded queue로 관리하도록 바뀌었고, `ASRFLOW_STREAM_MAX_ACCUM_SAMPLES`로 상한을 설정할 수 있다.
+- 패키지 버전을 `0.2.1`로 올리고, README·프로토콜 문서·`sample.env`를 현재 구현과 맞도록 갱신했다.
+
+### 이전 대비 차이점
+
+| 항목 | 이전 | 현재 |
+| --- | --- | --- |
+| 서버 메타 조회 | `DESCRIBE` 응답에 의존 | `SERVER_INFO(102)`로 별도 조회하고 `DESCRIBE`도 같은 메타 기반으로 정리 |
+| 스트리밍 세션 정리 | `action=end` 뒤 잔존 상태가 남을 수 있음 | 종료 직후 `reset()`을 호출하고 필요 시 `ASR_CLEAR_BUFFER(1003)`로 강제 초기화 |
+| 누적 오디오 관리 | 전체 누적 배열을 계속 `concatenate` | 최대 샘플 수를 넘기면 오래된 샘플부터 제거하는 bounded queue |
+| 환경 설정 | stream 누적 상한 설정 없음 | `ASRFLOW_STREAM_MAX_ACCUM_SAMPLES` 추가 |
+
+## 이 문서를 처음 보는 사람을 위한 지침
+
+1. **설치**: `uv sync` → `uv run nf-vision-models-download` 순서로 실행한다.
+2. **환경 설정**: `sample.env`를 복사하여 프로젝트 루트에 `.env`로 배치한다.
+3. **프로토콜**: 모든 서버 간 통신은 **NFCP TCP** 기반이다. REST/HTTP는 사용하지 않는다.
+4. **구조 파악**: 코드 구조와 아키텍처는 [`_forAI/`](_forAI/) 디렉터리 문서를 먼저 읽는다.
+5. **새 서버 추가 시**: `common.protocols.nfcp`의 `read_frame`/`write_frame`을 사용하고, `PING`/`DESCRIBE` 핸들러를 반드시 포함한다. 참고 구현은 `AsrIngressServer`와 `CamHubServer`다.
 
 ---
 
@@ -209,8 +229,10 @@ NFCP 커맨드:
 | --- | --- | --- |
 | `PING` | 99 | 서비스 상태 확인 |
 | `DESCRIBE` | 101 | 서비스 상세 정보 (지원 커맨드, 모델, streaming 여부) |
+| `SERVER_INFO` | 102 | 버전/호스트/포트/uptime 등 서버 메타 조회 |
 | `ASR_TRANSCRIBE` | 1001 | batch 음성 인식. meta: `{audio_format, samplerate, channels}`, data: audio bytes |
 | `ASR_TRANSCRIBE_STREAM` | 1002 | native streaming. `NF_ASR_STREAM_ENABLED=true` 필요. meta `action`: `start`/`end`/생략(chunk) |
+| `ASR_CLEAR_BUFFER` | 1003 | 서버 내 스트리밍 버퍼/세션 상태 강제 초기화 |
 
 ### nf-voice-mic-client (마이크 클라이언트)
 
@@ -306,6 +328,7 @@ uv run nf-asr-stream-realtime
 | `ASRFLOW_STREAM_MAX_NEW_TOKENS` | `512` | 디코딩 최대 토큰 수 |
 | `ASRFLOW_STREAM_UNFIXED_CHUNK_NUM` | `2` | 확정되지 않은 chunk 유지 수 |
 | `ASRFLOW_STREAM_UNFIXED_TOKEN_NUM` | `5` | 확정되지 않은 토큰 유지 수 |
+| `ASRFLOW_STREAM_MAX_ACCUM_SAMPLES` | `2000` | streaming 누적 오디오 큐 최대 샘플 수 (초과 시 오래된 샘플부터 제거) |
 
 ### nf-vision (Vision 샘플 런처)
 
@@ -430,6 +453,7 @@ MicrophoneSource
 | --- | --- | --- |
 | `PING` | 99 | 서비스 상태 확인 |
 | `DESCRIBE` | 101 | 서비스 상세 정보 |
+| `SERVER_INFO` | 102 | 버전/호스트/포트/uptime 등 서버 메타 조회 |
 
 서비스별 커맨드:
 
@@ -437,6 +461,7 @@ MicrophoneSource
 | --- | --- | --- | --- |
 | ASR | `ASR_TRANSCRIBE` | 1001 | batch 음성 인식 |
 | ASR | `ASR_TRANSCRIBE_STREAM` | 1002 | native streaming 음성 인식 |
+| ASR | `ASR_CLEAR_BUFFER` | 1003 | streaming buffer/session 상태 초기화 |
 | Vision | `VISION_UPLOAD_FRAME` | 5003 | 카메라 프레임 업로드 |
 | Vision | `VISION_GET_FRAME` | 5004 | 최신 프레임 조회 |
 | Vision | `VISION_LIST_CAMERAS` | 5005 | 카메라 목록 |
@@ -474,6 +499,7 @@ ASRFLOW_STREAM_LANGUAGE=auto
 ASRFLOW_STREAM_CHUNK_SEC=2.0
 ASRFLOW_STREAM_SAMPLERATE=16000
 ASRFLOW_STREAM_MAX_NEW_TOKENS=512
+ASRFLOW_STREAM_MAX_ACCUM_SAMPLES=2000
 NF_ASR_STREAM_ENABLED=true
 ```
 

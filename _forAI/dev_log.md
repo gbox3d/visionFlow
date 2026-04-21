@@ -1,5 +1,39 @@
 # Dev Log
 
+## 목차
+
+1. [2026-04-17](#2026-04-17)
+2. [2026-04-15](#2026-04-15)
+3. [2026-04-01](#2026-04-01)
+4. [2026-03-31](#2026-03-31)
+
+최근 구현 상세는 `2026-04-17` 항목부터 보면 된다.
+
+## 2026-04-17
+
+### nf-asr-server 스트리밍 버퍼 초기화 커맨드 추가
+
+- `common.protocols.nfcp.CommandCode`에 `ASR_CLEAR_BUFFER(1003)`를 추가했다.
+- `voiceFlow.gateways.asr_ingress_server.AsrIngressServer`에 `ASR_CLEAR_BUFFER` 디스패치 핸들러를 추가했다.
+  - streaming processor가 있을 때 `proc.reset()`을 호출해 내부 버퍼/세션 상태를 강제 초기화한다.
+  - 응답 meta는 `{"state": "buffer_cleared", "stream_active": false}`를 반환한다.
+- `ASR_TRANSCRIBE_STREAM`의 `action=end` 처리 후에도 `proc.reset()`을 호출하도록 보강해 세션 종료 뒤 잔존 상태를 줄였다.
+- 문서 반영:
+  - `README.md` ASR/NFCP command 표에 `ASR_CLEAR_BUFFER(1003)` 추가
+  - `src/common/protocols/common_protocol.md` ASR command 표에 `ASR_CLEAR_BUFFER(1003)` 추가
+
+### 버전 업 + 서버 정보 조회 프로토콜 추가
+
+- 패키지 버전을 `0.2.1`로 올렸다.
+  - `pyproject.toml`
+  - `src/neuroflow/__init__.py`
+- 공통 NFCP 커맨드에 `SERVER_INFO(102)`를 추가했다.
+  - `src/common/protocols/nfcp.py`
+  - `src/common/protocols/common_protocol.md`
+- `AsrIngressServer`에 `SERVER_INFO` 핸들러를 추가했다.
+  - 응답 메타: `version`, `host`, `port`, `pid`, `uptime_ms`, `streaming`, `commands`
+  - `DESCRIBE`도 동일한 서버 메타를 기반으로 확장 응답하도록 정리
+
 ## 2026-04-15
 
 ### nf-vision-camhub 서버 신규 생성

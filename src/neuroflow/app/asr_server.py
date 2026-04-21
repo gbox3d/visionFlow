@@ -37,6 +37,7 @@ def _build_streaming_processor():
         chunk_size_sec=env_float_any(("ASRFLOW_STREAM_CHUNK_SEC",), 2.0),
         unfixed_chunk_num=env_int_any(("ASRFLOW_STREAM_UNFIXED_CHUNK_NUM",), 2),
         unfixed_token_num=env_int_any(("ASRFLOW_STREAM_UNFIXED_TOKEN_NUM",), 5),
+        max_accum_samples=env_int_any(("ASRFLOW_STREAM_MAX_ACCUM_SAMPLES",), 2000),
     )
     proc.warmup()
     return proc

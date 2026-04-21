@@ -1,5 +1,21 @@
 # NeuroFlow Architecture
 
+## 목차
+
+1. [최근 변경 초점](#최근-변경-초점)
+2. [1. Layer Ownership](#1-layer-ownership)
+3. [2. Canonical Runtime Paths](#2-canonical-runtime-paths)
+4. [3. Network ASR Server Flow](#3-network-asr-server-flow)
+5. [4. Public Entry Points](#4-public-entry-points)
+6. [5. Model Experiment Split](#5-model-experiment-split)
+7. [6. Live Compatibility Surface](#6-live-compatibility-surface)
+
+## 최근 변경 초점
+
+- `AsrIngressServer`는 이제 `PING`, `DESCRIBE`, `SERVER_INFO`, `ASR_TRANSCRIBE`를 기본 공통 표면으로 제공하고 streaming 활성 시 `ASR_TRANSCRIBE_STREAM`, `ASR_CLEAR_BUFFER`까지 노출한다.
+- 운영 메타 조회와 capability 조회를 분리해 `SERVER_INFO`는 host/port/pid/uptime 중심, `DESCRIBE`는 지원 포맷과 기본값 중심 응답으로 정리했다.
+- `QwenStreamingAsrProcessor`는 bounded accumulation과 명시적 `reset()` 지점을 가져 stream 세션 종료 후 잔존 상태를 줄였다.
+
 ## 1. Layer Ownership
 
 ```mermaid
@@ -57,6 +73,12 @@ flowchart LR
     BatchProc --> BatchVendor["Whisper / Qwen vendor"]
     StreamProc --> StreamVendor["Qwen ASR transformers"]
 ```
+
+운영 제어 메모:
+
+- `SERVER_INFO(102)`는 서버 버전과 런타임 상태를 별도 조회하는 공통 진단 경로다.
+- `ASR_CLEAR_BUFFER(1003)`는 모델을 내리지 않고 streaming processor 상태만 비우는 운영 커맨드다.
+- `ASR_TRANSCRIBE_STREAM`의 `action=end`는 마지막 결과를 내보낸 뒤 processor를 바로 `reset()`한다.
 
 ## 4. Public Entry Points
 

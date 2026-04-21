@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import deque
 import os
 import time
 from pathlib import Path
@@ -29,6 +30,7 @@ class QwenStreamingAsrProcessor:
         chunk_size_sec: float = 2.0,
         unfixed_chunk_num: int = 2,
         unfixed_token_num: int = 5,
+        max_accum_samples: int = 2000,
     ):
         self.backend = "qwen_transformers"
         self.model_name = model_name
@@ -38,6 +40,7 @@ class QwenStreamingAsrProcessor:
         self.chunk_size_sec = float(chunk_size_sec)
         self.unfixed_chunk_num = int(unfixed_chunk_num)
         self.unfixed_token_num = int(unfixed_token_num)
+        self.max_accum_samples = max(1, int(max_accum_samples))
 
         self._qwen_model: Any | None = None
 
@@ -45,7 +48,8 @@ class QwenStreamingAsrProcessor:
         self._chunk_size_samples: int = 0
         self._chunk_id: int = 0
         self._buffer: np.ndarray = np.zeros((0,), dtype=np.float32)
-        self._audio_accum: np.ndarray = np.zeros((0,), dtype=np.float32)
+        self._audio_accum_queue: deque[np.ndarray] = deque()
+        self._audio_accum_samples: int = 0
         self._prompt_raw: str = ""
         self._force_language: str | None = None
         self._raw_decoded: str = ""
@@ -163,21 +167,52 @@ class QwenStreamingAsrProcessor:
         """Accumulate audio, run inference, update streaming state."""
         from qwen_asr.inference.utils import parse_asr_output
 
-        if self._audio_accum.size == 0:
-            self._audio_accum = chunk
-        else:
-            self._audio_accum = np.concatenate([self._audio_accum, chunk])
+        self._append_audio_accum(chunk)
+        audio_accum = self._get_audio_accum()
 
         prefix = self._build_prefix()
         prompt = self._prompt_raw + prefix
 
-        gen_text = self._infer_chunk(self._audio_accum, prompt)
+        gen_text = self._infer_chunk(audio_accum, prompt)
         self._raw_decoded = (prefix + gen_text) if prefix else gen_text
 
         lang, txt = parse_asr_output(self._raw_decoded, user_language=self._force_language)
         self._language_detected = lang
         self._text = txt
         self._chunk_id += 1
+
+    def _append_audio_accum(self, chunk: np.ndarray) -> None:
+        if chunk.size == 0:
+            return
+
+        c = np.asarray(chunk, dtype=np.float32)
+        if c.size >= self.max_accum_samples:
+            tail = c[-self.max_accum_samples :].copy()
+            self._audio_accum_queue.clear()
+            self._audio_accum_queue.append(tail)
+            self._audio_accum_samples = int(tail.size)
+            return
+
+        self._audio_accum_queue.append(c.copy())
+        self._audio_accum_samples += int(c.size)
+
+        while self._audio_accum_samples > self.max_accum_samples and self._audio_accum_queue:
+            overflow = self._audio_accum_samples - self.max_accum_samples
+            head = self._audio_accum_queue[0]
+            if overflow >= head.size:
+                self._audio_accum_queue.popleft()
+                self._audio_accum_samples -= int(head.size)
+            else:
+                self._audio_accum_queue[0] = head[overflow:].copy()
+                self._audio_accum_samples -= int(overflow)
+                break
+
+    def _get_audio_accum(self) -> np.ndarray:
+        if not self._audio_accum_queue:
+            return np.zeros((0,), dtype=np.float32)
+        if len(self._audio_accum_queue) == 1:
+            return self._audio_accum_queue[0]
+        return np.concatenate(list(self._audio_accum_queue))
 
     # ------------------------------------------------------------------
     # Audio normalization / text delta
@@ -249,6 +284,7 @@ class QwenStreamingAsrProcessor:
                 "native_streaming": True,
                 "stream_finished": finished,
                 "stream_chunk_sec": self.chunk_size_sec,
+                "max_accum_samples": self.max_accum_samples,
                 "unfixed_chunk_num": self.unfixed_chunk_num,
                 "unfixed_token_num": self.unfixed_token_num,
                 "full_text": text,
@@ -314,7 +350,8 @@ class QwenStreamingAsrProcessor:
         """Clear streaming state without unloading the model."""
         self._chunk_id = 0
         self._buffer = np.zeros((0,), dtype=np.float32)
-        self._audio_accum = np.zeros((0,), dtype=np.float32)
+        self._audio_accum_queue.clear()
+        self._audio_accum_samples = 0
         self._raw_decoded = ""
         self._text = ""
         self._language_detected = ""
