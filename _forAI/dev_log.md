@@ -2,12 +2,88 @@
 
 ## 목차
 
-1. [2026-04-17](#2026-04-17)
-2. [2026-04-15](#2026-04-15)
-3. [2026-04-01](#2026-04-01)
-4. [2026-03-31](#2026-03-31)
+1. [2026-04-29 문서 정리 및 Unity 연동 가이드 추가](#2026-04-29-문서-정리-및-unity-연동-가이드-추가)
+2. [2026-04-29 TTS 품질 엔진 전환](#2026-04-29-tts-품질-엔진-전환)
+3. [2026-04-29 TTS REST gateway 추가](#2026-04-29-tts-rest-gateway-추가)
+4. [2026-04-28 TTS 본체 통합](#2026-04-28-tts-본체-통합)
+5. [2026-04-28](#2026-04-28)
+6. [2026-04-17](#2026-04-17)
+7. [2026-04-15](#2026-04-15)
+8. [2026-04-01](#2026-04-01)
+9. [2026-03-31](#2026-03-31)
+10. [2026-03-25](#2026-03-25)
+11. [2026-03-30](#2026-03-30)
 
-최근 구현 상세는 `2026-04-17` 항목부터 보면 된다.
+최근 구현 상세는 `2026-04-29` 항목부터 보면 된다.
+
+## 2026-04-29 문서 정리 및 Unity 연동 가이드 추가
+
+- `forai-scaffold`를 재실행해 `_forAI` 표준 문서 세트가 이미 존재하고, 생성/덮어쓰기가 없음을 확인했다.
+- `_forAI/developer_promise_system.md`를 추가해 Unity/C# 개발자가 ASR/TTS를 호출하는 방법을 정리했다.
+- `_forAI/readme.md`, `_forAI/inventory.md`, `_forAI/memo.md`에서 새 개발자 문서를 연결했다.
+- README의 REST 관련 표현을 내부 표준은 NFCP, 외부 앱/키오스크 연동은 REST gateway 허용으로 정리했다.
+
+### Unity 연동 문서 전환
+
+- `_forAI/developer_promise_system.md`를 Unity/C# 개발자용 ASR/TTS 연동 문서로 재구성했다.
+- 예제 주소는 `192.168.4.218`로 고정하고, 현재 listen 포트 `21861`(ASR TCP), `26120`(TTS TCP), `26121`(TTS REST)을 반영했다.
+- `nf-asr-server`, `nf-tts-server`의 NFCP TCP header/command/meta/data 구조와 Unity C# 예제를 추가했다.
+- `nf-tts-rest-server`의 `/health`, `/describe`, `/tts` API와 Unity `UnityWebRequest` 예제를 추가했다.
+
+### Unity 연동 문서 분리
+
+- `_forAI/developer_promise_system.md`를 짧은 인덱스 문서로 줄였다.
+- TCP/NFCP 예제는 `_forAI/unity_nfcp_tcp_guide.md`로 분리했다.
+- TTS REST 예제는 `_forAI/unity_tts_rest_guide.md`로 분리했다.
+- README에는 세부 예제 문서 링크만 남겼다.
+
+## 2026-04-29 TTS 품질 엔진 전환
+
+- Piper ONNX KSS 경로는 빠르지만 한국어 발음 품질이 낮아 기본 엔진을 `speecht5-ko`로 전환했다.
+- 모델은 `ahnhs2k/speecht5-korean`을 사용하며, 현재 GPU 여유 메모리 약 3GB 상황을 고려해 `NF_TTS_DEVICE=cpu`를 유지한다.
+- Piper ONNX 모델은 빠른 fallback으로 남겼다.
+- 검증:
+  - `uv run python -m compileall src/ttsFlow src/neuroflow/app/tts_server.py src/neuroflow/app/tts_rest_server.py`
+  - `curl http://127.0.0.1:26121/health`
+  - `curl -X POST http://127.0.0.1:26121/tts ... --output /tmp/neuroflow_tts_quality.wav`
+
+## 2026-04-29 TTS REST gateway 추가
+
+- `nf-tts-rest-server`를 추가해 `POST /tts` JSON 요청에 `audio/wav`를 반환하도록 했다.
+- REST gateway는 `ttsFlow`의 기존 handler/engine을 공유하고, NFCP TTS 서버와 모델 실행 코드를 중복하지 않는다.
+- `NF_TTS_REST_HOST`, `NF_TTS_REST_PORT` 환경 변수를 추가했다.
+- 검증:
+  - `uv sync`
+  - `uv run python -m compileall src/ttsFlow src/neuroflow/app/tts_server.py src/neuroflow/app/tts_rest_server.py`
+  - `uv run nf-tts-rest-server --help`
+  - `curl http://127.0.0.1:26121/health`
+  - `curl -X POST http://127.0.0.1:26121/tts ... --output /tmp/neuroflow_tts_rest.wav`
+
+## 2026-04-28 TTS 본체 통합
+
+- 별도 실험 프로젝트였던 `/home/miso/work/NeuroFlow_TTS` 방향을 폐기하고 NeuroFlow 본체에 `ttsFlow`를 추가했다.
+- `nf-tts-server`를 NFCP TCP 기반 `TTS_SYNTHESIZE(3001)` 서버로 추가했다.
+- `nf-tts-client`를 간단한 WAV 생성 테스트 클라이언트로 추가했다.
+- `nf-tts-models-download`로 한국어 Piper ONNX KSS 모델과 config를 `models/`에 내려받도록 했다.
+- TTS 의존성은 uv 환경에 `piper-tts`, `piper-plus-g2p[ko]`, `python-mecab-ko`로 통합했다.
+- 검증:
+  - `uv sync`
+  - `uv run nf-tts-models-download`
+  - `uv run python -m compileall src`
+  - `uv run nf-tts-server --host 127.0.0.1 --port 26120`
+  - `uv run nf-tts-client '안녕하세요. 안내를 시작합니다.' -o /tmp/neuroflow_tts_integrated.wav`
+
+## 2026-04-28
+
+### 프로젝트 파악 및 문서 현재화
+
+- `forai-scaffold`를 재실행해 `_forAI` 표준 문서 세트가 이미 존재하며 생성/덮어쓰기가 없음을 확인했다.
+- 실제 코드 기준으로 public entry point, NFCP protocol, ASR server, CamHub server, env 설정을 재확인했다.
+- 문서 불일치 수정:
+  - README의 NFCP frame 예시 헤더 크기를 실제 구현과 같은 `64 bytes`로 수정
+  - `_forAI/readme.md`, `_forAI/inventory.md`의 CamHub 설명을 `FastAPI`에서 `NFCP TCP`로 수정
+  - `src/common/protocols/common_protocol.md`에 현재 구현된 vision command `5003~5005`를 반영
+- 현재 저장소에서 자동 테스트 디렉터리/pytest 설정은 확인되지 않았다.
 
 ## 2026-04-17
 
@@ -147,7 +223,7 @@
 - `visionflow`는 가장 안정된 축이다.
 - `voiceFlow`는 실제 ASR core 자산 저장소다.
 - `asrFlow`는 이미 서버/클라이언트가 있지만 아직 `voiceFlow` 브리지 의존이 남아 있다.
-- `llmFlow`, `ttsFlow`, `backend`는 아직 repo 안에 없다.
+- 당시 기준으로 `llmFlow`, `ttsFlow`, `backend`는 아직 repo 안에 없었다.
 - 루트 문서와 패키지 설명은 아직 전체 비전보다 `VisionFlow` 중심에 가깝다.
 
 ### 후속 추천

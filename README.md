@@ -11,10 +11,14 @@
    - [visionFlow](#visionflow)
    - [voiceFlow](#voiceflow)
    - [asrFlow](#asrflow)
+   - [ttsFlow](#ttsflow)
 7. [사용법 상세](#사용법-상세)
    - [nf-vision-camhub (카메라 허브 서버)](#nf-vision-camhub-카메라-허브-서버)
    - [nf-vision-camhub-client (카메라 클라이언트)](#nf-vision-camhub-client-카메라-클라이언트)
    - [nf-asr-server (ASR 서버)](#nf-asr-server-asr-서버)
+   - [nf-tts-server (TTS 서버)](#nf-tts-server-tts-서버)
+   - [nf-tts-rest-server (TTS REST API)](#nf-tts-rest-server-tts-rest-api)
+   - [nf-tts-client (TTS 테스트 클라이언트)](#nf-tts-client-tts-테스트-클라이언트)
    - [nf-voice-mic-client (마이크 클라이언트)](#nf-voice-mic-client-마이크-클라이언트)
    - [nf-asr-chunk-realtime (Chunk ASR UI)](#nf-asr-chunk-realtime-chunk-asr-ui)
    - [nf-audiomi-asr-chunk-realtime (AudioMi Chunk UI)](#nf-audiomi-asr-chunk-realtime-audiomi-chunk-ui)
@@ -25,11 +29,12 @@
 8. [ASR Runtime Split](#asr-runtime-split)
 9. [NFCP 프로토콜](#nfcp-프로토콜)
 10. [환경 변수](#환경-변수)
-11. [Layout](#layout)
+11. [개발자 문서](#개발자-문서)
+12. [Layout](#layout)
 
 ---
 
-`NeuroFlow`는 vision, audio, ASR을 한 저장소에서 운영하는 멀티모달 런타임이다.
+`NeuroFlow`는 vision, audio, ASR, TTS를 한 저장소에서 운영하는 멀티모달 런타임이다.
 
 ## 최근 구현 변경
 
@@ -37,6 +42,7 @@
 
 - `SERVER_INFO(102)`를 추가해 NFCP ASR 서버의 `version`, `host`, `port`, `pid`, `uptime_ms`, `streaming`, `commands`를 별도 조회할 수 있게 했다.
 - `ASR_CLEAR_BUFFER(1003)`를 추가해 streaming processor의 버퍼/세션 상태를 서버에서 즉시 초기화할 수 있게 했다.
+- `nf-tts-server`와 `nf-tts-rest-server`를 추가해 한국어 TTS를 NFCP 또는 REST로 호출할 수 있게 했다. 기본은 CPU 품질 우선 `speecht5-ko`이며, Piper ONNX는 빠른 fallback으로 남겨둔다.
 - `QwenStreamingAsrProcessor`는 누적 오디오를 bounded queue로 관리하도록 바뀌었고, `ASRFLOW_STREAM_MAX_ACCUM_SAMPLES`로 상한을 설정할 수 있다.
 - 패키지 버전을 `0.2.1`로 올리고, README·프로토콜 문서·`sample.env`를 현재 구현과 맞도록 갱신했다.
 
@@ -53,7 +59,7 @@
 
 1. **설치**: `uv sync` → `uv run nf-vision-models-download` 순서로 실행한다.
 2. **환경 설정**: `sample.env`를 복사하여 프로젝트 루트에 `.env`로 배치한다.
-3. **프로토콜**: 모든 서버 간 통신은 **NFCP TCP** 기반이다. REST/HTTP는 사용하지 않는다.
+3. **프로토콜**: 내부 표준 서버 간 통신은 **NFCP TCP** 기반이다. REST/HTTP는 외부 앱/키오스크용 얇은 gateway로만 둔다.
 4. **구조 파악**: 코드 구조와 아키텍처는 [`_forAI/`](_forAI/) 디렉터리 문서를 먼저 읽는다.
 5. **새 서버 추가 시**: `common.protocols.nfcp`의 `read_frame`/`write_frame`을 사용하고, `PING`/`DESCRIBE` 핸들러를 반드시 포함한다. 참고 구현은 `AsrIngressServer`와 `CamHubServer`다.
 
@@ -66,10 +72,12 @@ common         -> 공용 contract, protocol (NFCP), runtime (TopicBus)
 visionflow     -> 카메라, MediaPipe 추론, camhub (영상 중계 서버)
 voiceFlow      -> 오디오 source, client, ingress server
 asrFlow        -> bootstrap, processor, worker, vendor, ASR handler
+ttsFlow        -> Korean TTS engine, NFCP handler, sample client
 neuroflow.app  -> composition root, app-level entry point
 ```
 
 NFCP ASR 서버는 `voiceFlow` transport와 `asrFlow` core를 `neuroflow.app.asr_server`에서 조립해 띄운다.
+NFCP TTS 서버는 `ttsFlow` core를 `neuroflow.app.tts_server`에서 조립해 띄운다.
 CamHub 서버는 `visionflow.camhub`에서 NFCP TCP로 카메라 프레임을 중계한다.
 
 ---
@@ -79,6 +87,7 @@ CamHub 서버는 `visionflow.camhub`에서 NFCP TCP로 카메라 프레임을 �
 ```bash
 uv sync
 uv run nf-vision-models-download
+uv run nf-tts-models-download  # Piper fallback을 쓸 때만 필요
 ```
 
 - Python `>=3.11` 기준
@@ -113,6 +122,15 @@ uv run nf-vision-models-download
 | `uv run nf-asr-chunk-realtime` | 로컬 마이크 chunk ASR 실험 UI |
 | `uv run nf-audiomi-asr-chunk-realtime` | audioMi accumulate chunk ASR 실험 UI |
 | `uv run nf-asr-stream-realtime` | Qwen native streaming 실험 UI |
+
+### ttsFlow
+
+| 커맨드 | 역할 |
+| --- | --- |
+| `uv run nf-tts-models-download` | Piper fallback용 한국어 ONNX 모델 다운로드 |
+| `uv run nf-tts-server` | canonical NFCP TTS 서버 |
+| `uv run nf-tts-rest-server` | 외부 앱/키오스크용 TTS REST API 서버 |
+| `uv run nf-tts-client "안녕하세요"` | TTS 서버 테스트 클라이언트 |
 
 ---
 
@@ -233,6 +251,89 @@ NFCP 커맨드:
 | `ASR_TRANSCRIBE` | 1001 | batch 음성 인식. meta: `{audio_format, samplerate, channels}`, data: audio bytes |
 | `ASR_TRANSCRIBE_STREAM` | 1002 | native streaming. `NF_ASR_STREAM_ENABLED=true` 필요. meta `action`: `start`/`end`/생략(chunk) |
 | `ASR_CLEAR_BUFFER` | 1003 | 서버 내 스트리밍 버퍼/세션 상태 강제 초기화 |
+
+### nf-tts-server (TTS 서버)
+
+NFCP TCP 기반 한국어 TTS 서버. 기본 엔진은 `speecht5-ko`이며, 현재 GPU 여유 메모리를 보호하기 위해 CPU 품질 우선 실행을 기본값으로 둔다. 기존 Piper ONNX KSS 경로는 빠르지만 발음 품질 이슈가 있어 fallback으로만 둔다.
+
+```bash
+# Piper fallback을 쓸 때만 최초 1회 모델 다운로드
+uv run nf-tts-models-download
+
+# 기본 실행 (0.0.0.0:26120)
+uv run nf-tts-server
+
+# env 파일 경로 지정
+uv run nf-tts-server --env ./my_config.env
+
+# 주소/포트 오버라이드
+uv run nf-tts-server --host 127.0.0.1 --port 30020
+```
+
+CLI 인자:
+
+| 옵션 | 타입 | 기본값 | 환경 변수 | 설명 |
+| --- | --- | --- | --- | --- |
+| `--env` | `str` | `None` | - | env 파일 경로를 직접 지정. 생략 시 `.env` 자동 탐색 |
+| `--host` | `str` | `None` | `NF_TTS_SERVER_HOST` | TCP 바인드 주소. 생략 시 env 값 또는 `0.0.0.0` |
+| `--port` | `int` | `None` | `NF_TTS_SERVER_PORT` | TCP 리스닝 포트. 생략 시 env 값 또는 `26120` |
+| `--engine` | `str` | env/default | `NF_TTS_ENGINE` | `speecht5-ko`, `piper-ko`, smoke test용 `stub` |
+| `--model` | `path` | env/default | `NF_TTS_MODEL_PATH` | Piper ONNX 모델 경로 |
+| `--model-id` | `str` | env/default | `NF_TTS_MODEL_ID` | `speecht5-ko` Hugging Face 모델 id |
+| `--config` | `path` | env/default | `NF_TTS_CONFIG_PATH` | Piper ONNX config 경로 |
+
+NFCP 커맨드:
+
+| Command | Code | 설명 |
+| --- | --- | --- |
+| `PING` | 99 | 서비스 상태 확인 |
+| `DESCRIBE` | 101 | 서비스 상세 정보 (엔진, 모델, 지원 포맷) |
+| `SERVER_INFO` | 102 | 버전/호스트/포트/uptime 등 서버 메타 조회 |
+| `TTS_SYNTHESIZE` | 3001 | 텍스트 합성. meta `{text, audio_format, language, speed}`, 응답 data: WAV bytes |
+
+### nf-tts-rest-server (TTS REST API)
+
+키오스크 앱이나 웹 클라이언트가 쓰기 쉬운 HTTP JSON gateway다. 내부 엔진과 검증 로직은 `nf-tts-server`와 같은 `ttsFlow` service를 공유한다.
+
+```bash
+# Piper fallback을 쓸 때만 최초 1회 모델 다운로드
+uv run nf-tts-models-download
+
+# 기본 실행 (0.0.0.0:26121)
+uv run nf-tts-rest-server
+
+# 로컬 바인드
+uv run nf-tts-rest-server --host 127.0.0.1 --port 26121
+```
+
+엔드포인트:
+
+| Method | Path | 역할 |
+| --- | --- | --- |
+| `GET` | `/health` | 상태 확인 |
+| `GET` | `/describe` | 엔진/모델/기본값 조회 |
+| `POST` | `/tts` | JSON `{text, audio_format, language, speed}` -> `audio/wav` |
+
+요청 예:
+
+```bash
+curl -X POST http://127.0.0.1:26121/tts \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"안녕하세요. 안내를 시작합니다.","speed":1.0}' \
+  --output /tmp/neuroflow_tts.wav
+```
+
+### nf-tts-client (TTS 테스트 클라이언트)
+
+로컬 TTS 서버에 NFCP `TTS_SYNTHESIZE` 요청을 보내고 WAV 파일을 저장한다.
+
+```bash
+# 터미널 1: TTS 서버 시작
+uv run nf-tts-server
+
+# 터미널 2: WAV 생성 테스트
+uv run nf-tts-client "안녕하세요. 안내를 시작합니다." -o /tmp/neuroflow_tts.wav
+```
 
 ### nf-voice-mic-client (마이크 클라이언트)
 
@@ -444,7 +545,7 @@ MicrophoneSource
 모든 서버 간 통신은 `common.protocols.nfcp` 기반 TCP binary framing을 사용한다.
 
 ```text
-[Header 72 bytes] [meta JSON] [data bytes]
+[Header 64 bytes] [meta JSON] [data bytes]
 ```
 
 모든 서버는 아래 공통 커맨드를 지원한다:
@@ -462,6 +563,7 @@ MicrophoneSource
 | ASR | `ASR_TRANSCRIBE` | 1001 | batch 음성 인식 |
 | ASR | `ASR_TRANSCRIBE_STREAM` | 1002 | native streaming 음성 인식 |
 | ASR | `ASR_CLEAR_BUFFER` | 1003 | streaming buffer/session 상태 초기화 |
+| TTS | `TTS_SYNTHESIZE` | 3001 | 텍스트 음성 합성. 응답 data는 WAV bytes |
 | Vision | `VISION_UPLOAD_FRAME` | 5003 | 카메라 프레임 업로드 |
 | Vision | `VISION_GET_FRAME` | 5004 | 최신 프레임 조회 |
 | Vision | `VISION_LIST_CAMERAS` | 5005 | 카메라 목록 |
@@ -469,7 +571,8 @@ MicrophoneSource
 새 서버를 추가할 때는 `AsrIngressServer` 또는 `CamHubServer`의 패턴을 따른다:
 - `_dispatch` → `_handle_client` → `run` 구조
 - `PING`/`DESCRIBE` 핸들러 기본 포함
-- asyncio TCP + NFCP만으로 구현, HTTP 프레임워크 금지
+- 내부 표준 서버는 asyncio TCP + NFCP로 구현한다
+- 외부 앱 연동이 필요한 경우 REST gateway를 별도 entry point로 둔다
 
 ---
 
@@ -508,6 +611,10 @@ NF_ASR_STREAM_ENABLED=true
 ```env
 NF_ASR_SERVER_HOST=0.0.0.0
 NF_ASR_SERVER_PORT=26100
+NF_TTS_SERVER_HOST=0.0.0.0
+NF_TTS_SERVER_PORT=26120
+NF_TTS_REST_HOST=0.0.0.0
+NF_TTS_REST_PORT=26121
 NF_CAMHUB_HOST=0.0.0.0
 NF_CAMHUB_PORT=26200
 AUDIOMI_HOST=127.0.0.1
@@ -522,6 +629,18 @@ NF_CAMHUB_CLIENT_FPS=10
 NF_CAMHUB_CLIENT_QUALITY=80
 ```
 
+### TTS 계열 (`NF_TTS_*`)
+
+```env
+NF_TTS_ENGINE=speecht5-ko
+NF_TTS_MODEL_ID=ahnhs2k/speecht5-korean
+NF_TTS_MODEL_PATH=models/piper-kss-korean.onnx
+NF_TTS_CONFIG_PATH=models/piper-kss-korean.onnx.json
+NF_TTS_DEVICE=cpu
+NF_TTS_SPEED=1.0
+NF_TTS_MAX_CHARS=500
+```
+
 ### 카메라 / 디바이스
 
 ```env
@@ -531,6 +650,19 @@ CAMERA_USE_DSHOW=true
 MIC_DEVICE=0
 MIC_SAMPLERATE=16000
 ```
+
+---
+
+## 개발자 문서
+
+Unity/키오스크 연동을 개발할 때는 [`_forAI/developer_promise_system.md`](_forAI/developer_promise_system.md)를 먼저 본다.
+
+세부 예제는 문서가 커지지 않도록 분리했다.
+
+| 문서 | 내용 |
+| --- | --- |
+| [`_forAI/unity_nfcp_tcp_guide.md`](_forAI/unity_nfcp_tcp_guide.md) | `nf-asr-server`, `nf-tts-server` TCP/NFCP 프로토콜과 Unity C# 예제 |
+| [`_forAI/unity_tts_rest_guide.md`](_forAI/unity_tts_rest_guide.md) | `nf-tts-rest-server` REST API와 Unity `UnityWebRequest` 예제 |
 
 ---
 
@@ -563,6 +695,11 @@ src/
     workers/          # chunk, accumulate, streaming worker
     vendors/          # whisper, qwen_asr runtime
     utils/
+  ttsFlow/
+    engines/          # SpeechT5 Korean, Piper Korean fallback, stub engine
+    gateways/         # TtsServer (NFCP TCP)
+    services/         # NFCP TTS handler
+    sample/           # NFCP TTS client
 ```
 
 상세 구조는 [`_forAI/architecture.md`](_forAI/architecture.md), 현재 인벤토리는 [`_forAI/inventory.md`](_forAI/inventory.md)를 보면 된다.

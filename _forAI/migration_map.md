@@ -4,6 +4,13 @@
 > 이 문서는 migration 기록 성격이 강하다.
 > 최신 canonical 경로와 public 표면은 `_forAI/architecture.md`와 `_forAI/inventory.md`를 우선 기준으로 본다.
 
+## 목차
+
+1. [목적](#목적)
+2. [1. 현재 기준 구조](#1-현재-기준-구조)
+3. [2. 현재 repo 내부 매핑](#2-현재-repo-내부-매핑)
+4. [3. 제거된 legacy 표면](#3-제거된-legacy-표면)
+
 ## 목적
 
 현재 repo 안의 자산이 어떤 canonical 경로로 정리되었는지, 무엇이 compatibility shim인지, 무엇이 제거되었는지 상태 중심으로 정리한 매핑표다.
@@ -40,6 +47,11 @@ src/
     utils/
     contracts/   # skeleton
     sources/     # skeleton
+  ttsFlow/
+    engines/
+    services/
+    gateways/
+    sample/
   neuroflow/
     app/
 ```
@@ -95,6 +107,8 @@ src/
 | 현재 자산 | canonical / 목표 경로 | 상태 | 메모 |
 | --- | --- | --- | --- |
 | `src/neuroflow/app/asr_server.py` | 유지 | `Done` | server composition root |
+| `src/neuroflow/app/tts_server.py` | 유지 | `Done` | NFCP TTS server composition root |
+| `src/neuroflow/app/tts_rest_server.py` | 유지 | `Done` | 외부 앱/키오스크용 TTS REST composition root |
 | `src/neuroflow/app/asr_chunk_realtime.py` | 유지 | `Done` | 로컬 마이크 chunk UI |
 | `src/neuroflow/app/audiomi_asr_chunk_realtime.py` | 유지 | `Done` | audioMi accumulate UI |
 | `src/neuroflow/app/asr_stream_realtime.py` | 유지 | `Done` | native stream UI |
@@ -107,6 +121,19 @@ src/
 | --- | --- | --- | --- |
 | `src/visionflow/**/*` | 현 위치 유지 | `Keep` | 1차 이동 대상이 아님 |
 | `src/common/tools/download_mediapipe_models.py` | 유지 | `Done` | MediaPipe 기본 모델 bootstrap 도구 |
+
+### 2.6 TTS Core
+
+| 현재 자산 | canonical / 목표 경로 | 상태 | 메모 |
+| --- | --- | --- | --- |
+| `src/ttsFlow/engines/speecht5_ko.py` | 유지 | `Done` | 기본 한국어 품질 TTS engine |
+| `src/ttsFlow/engines/piper_ko.py` | 유지 | `Done` | 빠른 fallback용 Piper ONNX engine |
+| `src/ttsFlow/engines/stub.py` | 유지 | `Done` | smoke test tone engine |
+| `src/ttsFlow/services/nfcp_tts_handler.py` | 유지 | `Done` | TTS request -> engine 호출 |
+| `src/ttsFlow/gateways/tts_server.py` | 유지 | `Done` | canonical NFCP TTS server |
+| `src/ttsFlow/gateways/rest_tts_server.py` | 유지 | `Done` | 외부 앱/키오스크용 REST gateway |
+| `src/ttsFlow/sample/nfcp_tts_client.py` | 유지 | `Done` | NFCP TTS smoke client |
+| `src/common/tools/download_tts_models.py` | 유지 | `Done` | Piper fallback 모델 다운로드 도구 |
 
 ## 3. 제거된 legacy 표면
 

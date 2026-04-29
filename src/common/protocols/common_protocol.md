@@ -2,7 +2,7 @@
 
 ## 1. 목적
 
-이 문서는 `asrFlow`, `llmFlow`, `ttsFlow`, `backend`, 추후 `visionflow`까지 공통으로 사용할 TCP 기반 바이너리 프로토콜 초안이다.
+이 문서는 `asrFlow`, `llmFlow`, `ttsFlow`, `backend`, `visionflow`까지 공통으로 사용할 TCP 기반 바이너리 프로토콜 초안이다.
 
 기존 STT/TTS 프로토타입의 장점은 유지하되, 실제 서비스 운영에 맞게 다음을 강화한다.
 
@@ -260,6 +260,9 @@ typedef struct {
 | ---: | --- | --- |
 | `5001` | `VISION_PROCESS_FRAME` | 예약 |
 | `5002` | `VISION_GET_STATE` | 예약 |
+| `5003` | `VISION_UPLOAD_FRAME` | 카메라 클라이언트가 JPEG 프레임 업로드 |
+| `5004` | `VISION_GET_FRAME` | 최신 카메라 프레임 조회 |
+| `5005` | `VISION_LIST_CAMERAS` | 등록된 카메라 목록 조회 |
 
 
 ## 9. 필수 서버 동작 규칙
@@ -285,7 +288,7 @@ typedef struct {
 {
   "service": "asrFlow",
   "ready": true,
-  "version": "0.2.0",
+  "version": "0.2.1",
   "uptime_ms": 154233,
   "active_jobs": 2
 }
@@ -342,7 +345,7 @@ typedef struct {
   "service_type": 3,
   "ready": true,
   "model_loaded": true,
-  "version": "0.2.0",
+  "version": "0.2.1",
   "uptime_ms": 21002,
   "active_jobs": 0,
   "echo": "optional"
@@ -450,27 +453,31 @@ final result meta 예시:
 ```json
 {
   "text": "안녕하세요",
-  "voice": "kr_female_01",
-  "format": "mp3",
-  "samplerate": 24000,
+  "audio_format": "wav",
+  "language": "ko",
   "speed": 1.0,
-  "emotion": "neutral"
+  "speaker_id": 0
 }
 ```
 
 응답:
 
-- meta = 출력 포맷 정보
-- data = 오디오 bytes
+- meta = 출력 포맷/길이/엔진 처리 정보
+- data = WAV bytes
 
 result meta 예시:
 
 ```json
 {
-  "format": "mp3",
-  "samplerate": 24000,
+  "audio_format": "wav",
+  "samplerate": 22050,
   "channels": 1,
-  "duration_ms": 1840
+  "duration_ms": 1840,
+  "processor_meta": {
+    "provider": "CPUExecutionProvider",
+    "inference_ms": 42,
+    "rtf": 0.03
+  }
 }
 ```
 

@@ -4,6 +4,22 @@
 > 이 문서는 과거 확장 계획과 마이그레이션 메모가 섞여 있다.
 > 현재 구조 판단은 `_forAI/architecture.md`, `_forAI/readme.md`, `_forAI/inventory.md`를 우선 기준으로 본다.
 > 본문 중 `vLLM`/`stream group` 언급은 역사적 메모이며, 현재 canonical stream 구현은 `Qwen ASR + qwen-asr transformers backend`다.
+> `ttsFlow`는 현재 이미 구현되어 있으며, 기본 TTS는 `speecht5-ko` CPU 품질 경로다.
+
+## 목차
+
+1. [1. 미션](#1-미션)
+2. [2. 현재 실제 상태](#2-현재-실제-상태)
+3. [3. 프로젝트를 어떻게 이해하면 좋은가](#3-프로젝트를-어떻게-이해하면-좋은가)
+4. [4. 목표 구조](#4-목표-구조)
+5. [5. 모듈 역할](#5-모듈-역할)
+6. [6. 설계 원칙](#6-설계-원칙)
+7. [7. 핵심 판단](#7-핵심-판단)
+8. [8. 추천 이행 순서](#8-추천-이행-순서)
+9. [9. 지금 당장 보이는 갭](#9-지금-당장-보이는-갭)
+10. [10. 바로 다음 액션 추천](#10-바로-다음-액션-추천)
+11. [11. 당분간 범위 밖](#11-당분간-범위-밖)
+12. [12. 2026-03-27 추가 계획: `Streaming ASR` + `Qwen3-ASR` + `MiracleASRServer`](#12-2026-03-27-추가-계획-streaming-asr--qwen3-asr--miracleasrserver)
 
 ## 1. 미션
 
@@ -191,9 +207,12 @@ NeuroFlow/
 
 ### Phase 3. `ttsFlow` 최소 골격 생성
 
-- processor와 gateway 분리
-- 엔진 초기화 코드 캡슐화
-- 단건 `synthesize` 요청부터 시작
+현재 완료된 축이다.
+
+- `ttsFlow` engine/service/gateway/sample client 분리
+- NFCP `TTS_SYNTHESIZE(3001)` 서버 추가
+- 키오스크 연동용 REST gateway 추가
+- 기본 TTS는 `speecht5-ko` CPU 품질 경로, Piper ONNX는 fallback
 
 ### Phase 4. `backend` MVP
 
@@ -212,7 +231,8 @@ NeuroFlow/
 - 루트 `README.md`와 `pyproject.toml`은 현재 public entrypoint 기준으로 많이 정리됐지만, 배포 spec과 일부 legacy 문서는 아직 따라오지 못했다.
 - `asrFlow`는 canonical core가 되었지만 `contracts`, `sources`는 아직 비어 있다.
 - 제품 경로 일부와 배포 자산은 아직 compatibility shim에 기대고 있다.
-- `llmFlow`, `ttsFlow`, `backend`는 목표 문서 대비 실제 코드가 없다.
+- `llmFlow`, `backend`는 목표 문서 대비 실제 코드가 없다.
+- `ttsFlow`는 구현됐지만 pipeline orchestration과 LLM 연동은 아직 없다.
 - 네이밍이 `visionflow`, `voiceFlow`, `asrFlow`로 섞여 있어 장기적으로는 정리가 필요하다.
 
 
@@ -222,7 +242,7 @@ NeuroFlow/
 2. 배포 spec과 legacy 문서가 새 canonical 경로를 직접 쓰게 정리한다.
 3. compatibility shim 제거 기준을 제품 경로 중심으로 고정한다.
 4. 그 다음에 `Qwen3-ASR`와 streaming session 설계를 재개한다.
-5. 마지막에 `llmFlow`, `ttsFlow`, `backend` 골격 작업으로 넘어간다.
+5. 마지막에 `llmFlow`, `backend` 골격과 `ASR -> LLM -> TTS` orchestration으로 넘어간다.
 
 
 ## 11. 당분간 범위 밖
