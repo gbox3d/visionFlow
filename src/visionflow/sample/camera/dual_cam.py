@@ -12,7 +12,7 @@ from __future__ import annotations
 import time
 import pygame
 
-from visionflow.pipeline.bus import TopicBus
+from common.runtime.bus import TopicBus
 from visionflow.sources.camera_source import CameraSource
 from visionflow.utils.image import cv_bgr_to_pygame_surface
 
@@ -65,7 +65,7 @@ class Application:
         self.cam2.start()
 
         pygame.init()
-        pygame.display.set_caption("VisionFlow - Dual Camera Viewer (640x480 x 2)")
+        pygame.display.set_caption("NeuroFlow - Dual Camera Viewer (640x480 x 2)")
 
         font = pygame.font.SysFont("Consolas", 18)
         small = pygame.font.SysFont("Consolas", 14)

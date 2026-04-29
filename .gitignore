@@ -11,3 +11,6 @@ wheels/
 
 models/*
 logs/*
+.env
+
+ecosystem.config.cjs

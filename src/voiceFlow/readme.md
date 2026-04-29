@@ -1,120 +1,144 @@
 # voiceFlow
 
-`voiceFlow`는 `TopicBus` 기반 실시간 음성 파이프라인입니다.
+`voiceFlow`는 `NeuroFlow`의 audio ingress / edge 계층이다.
 
-## Pipeline
+canonical 범위:
 
-`audioMi TCP` -> `AudioMiSource` -> `TopicBus("audio/raw")` -> `AccumulateAsrWorker` -> `TopicBus("text/asr")` -> `PySide6 UI`
+- microphone / external audio source
+- device utility
+- NFCP ingress server
+- microphone client
 
-## 핵심 구성
+`voiceFlow`는 텍스트를 직접 만드는 코어가 아니라, 오디오 입력과 네트워크 edge를 소유하고 `asrFlow`와 연결하는 역할만 맡는다.
 
+## 현재 소유 범위
+
+- `main.py`
+  - voice sample launcher
+- `sources/microphone_source.py`
+  - 로컬 마이크 source
 - `sources/audiomi_source.py`
-  - audioMi 서버에서 PCM16 mono 16kHz 수신
-  - `audio/raw` 토픽으로 publish
-- `processors/miso_stt_asr.py`
-  - `miso_stt` 백엔드(`ct2`, `hf_generate`, `hf_pipeline`) 래핑
-  - 모델 로딩/웜업/추론 및 메타 정보 제공
-- `workers/accumulate_asr_worker.py`
-  - ingest/infer 스레드 분리
-  - 고정 청크(`step_s`) 큐 누적 후 전체 버퍼 추론
-  - `max_window_s` 초과 시 앞 청크 트림
-  - 워밍업 상태(`text/asr_status`) publish
-  - 선택적 로그 저장(`logs/*.wav`, `logs/*.txt`)
-- `sample/audiomi_asr_realtime.py`
-  - audioMi 실시간 누적 ASR UI
-  - 모델명/캐시 루트/워밍업 진행률/queue/infer 시간 표시
-- `utils/env.py`
-  - `.env` 파싱 공용 유틸 (`env_str`, `env_int`, `env_bool`, `env_lang`, `env_*_any`)
+  - audioMi TCP ingress source
+- `gateways/asr_ingress_server.py`
+  - canonical NFCP ingress server
+- `sample/microphone_client.py`
+  - batch transcribe client
+- `sample/list_microphones.py`
+  - 입력 장치 목록
+- `sample/simple_mic_test.py`
+  - microphone source smoke test
+- `sample/mic_level_monitor.py`
+  - 입력 레벨 모니터
 - `utils/audio_device.py`
-  - 마이크 디바이스 파싱/카메라 path 기반 마이크 매칭 유틸
-- `utils/text.py`
-  - UI 텍스트 줄바꿈 공용 유틸 (`wrap_text`)
+  - 디바이스 탐색/매칭 보조 유틸
+
+연결되는 app entry point:
+
+- `neuroflow.app.asr_server`
+- `neuroflow.app.asr_chunk_realtime`
+- `neuroflow.app.audiomi_asr_chunk_realtime`
+- `neuroflow.app.asr_stream_realtime`
+
+## Runtime Spine
+
+```text
+voiceFlow.sources / voiceFlow.sample
+  -> common.runtime.bus.TopicBus("audio/raw")
+  -> asrFlow.workers / asrFlow.processors
+  -> common.runtime.bus.TopicBus("text/asr")
+  -> UI
+
+voiceFlow.gateways.asr_ingress_server
+  -> common.protocols.nfcp
+  -> common.runtime.audio_codec
+  -> asrFlow.services.nfcp_asr_handler
+  -> asrFlow.processors.miso_stt_asr
+```
+
+즉 `voiceFlow`는 입력과 transport를 맡고, 실제 STT 추론은 `asrFlow`가 맡는다.
+
+## NFCP Server Surface
+
+`voiceFlow.gateways.asr_ingress_server`는 아래 command를 처리한다.
+
+- `PING`
+- `DESCRIBE`
+- `ASR_TRANSCRIBE`
+- `ASR_TRANSCRIBE_STREAM`
+  - `streaming_processor`가 구성된 경우에만 노출
+  - 현재 `neuroflow.app.asr_server`에서는 `NF_ASR_STREAM_ENABLED=true`일 때 활성화된다
 
 ## 실행
 
 ```bash
-uv run python -m voiceFlow.sample.audiomi_asr_realtime
+uv run nf-voice
+uv run nf-asr-server
+uv run nf-voice-mic-client --host 127.0.0.1 --port 26100 --duration 4
+uv run nf-asr-chunk-realtime
+uv run nf-audiomi-asr-chunk-realtime
+uv run nf-asr-stream-realtime
 ```
 
-기존 단일 실시간 샘플:
+직접 실행:
 
 ```bash
-uv run python -m voiceFlow.sample.asr_realtime
+uv run python -m voiceFlow.sample.list_microphones
+uv run python -m voiceFlow.sample.simple_mic_test
+uv run python -m voiceFlow.sample.mic_level_monitor
+uv run python -m voiceFlow.sample.microphone_client --host 127.0.0.1 --port 26100 --duration 4
+uv run python -m neuroflow.app.asr_chunk_realtime
+uv run python -m neuroflow.app.audiomi_asr_chunk_realtime
+uv run python -m neuroflow.app.asr_stream_realtime
 ```
 
-두 샘플(`asr_realtime.py`, `audiomi_asr_realtime.py`)은 공통으로 `voiceFlow.utils.env`를 사용합니다.
+## Canonical Path 기준
 
-## 환경 변수 (.env)
+- bus
+  - `common.runtime.bus.TopicBus`
+- packet contracts
+  - `common.contracts.packets`
+- transport audio codec
+  - `common.runtime.audio_codec`
+- ASR processor / worker
+  - `asrFlow.processors.*`
+  - `asrFlow.workers.*`
+- app composition
+  - `neuroflow.app.asr_server`
 
-필수/주요 항목:
+## Environment
 
-- `AUDIOMI_HOST` (기본 `127.0.0.1`)
-- `AUDIOMI_PORT` (기본 `26070`)
-- `AUDIOMI_CHECKCODE` (기본 `20250918`)
-- `VOICEFLOW_STT_BACKEND` (`ct2` | `hf_generate` | `hf_pipeline`)
-- `VOICEFLOW_STT_MODEL` (예: `large-v3`)
-- `VOICEFLOW_STT_MODEL_PATH` (비우면 자동 해석)
-- `VOICEFLOW_STT_DEVICE` (기본 `auto`)
-- `VOICEFLOW_STT_FP16` (기본 `true`)
-- `VOICEFLOW_STT_LANGUAGE` (`auto` 또는 언어 코드)
-- `VOICEFLOW_STT_TASK` (기본 `transcribe`)
-- `VOICEFLOW_STT_BEAM_SIZE` (CT2 전용)
-- `VOICEFLOW_STT_TEMPERATURE` (기본 `0.0`)
-- `VOICEFLOW_STT_CT2_VAD_FILTER` (기본 `false`)
-- `VOICEFLOW_STT_SAMPLERATE` (기본 `16000`)
-- `ENABLE_LOGGING` (`true`일 때만 `logs/` 저장)
+`voiceFlow`에서 자주 쓰는 ingress/network 값:
 
-## 모델 로드 우선순위
+- `NF_ASR_SERVER_HOST`
+- `NF_ASR_SERVER_PORT`
+- `NF_ASR_STREAM_ENABLED`
+- `AUDIOMI_HOST`
+- `AUDIOMI_PORT`
+- `AUDIOMI_CHECKCODE`
+- `DEVICE_PATH`
+- `CAMERA_DEVICE_PATH`
+- `DEMO_DEVICE_PATH`
 
-1. UI/ENV의 `VOICEFLOW_STT_MODEL_PATH`
-2. 모델명(`VOICEFLOW_STT_MODEL`) 기반 로컬/HF 캐시 해석
+STT 모델/추론 설정은 `voiceFlow` 소유가 아니라 `asrFlow` 설정이다.
 
-UI에는 시작 후 아래 정보가 표시됩니다.
-
-- 모델명(또는 model id)
-- `cache root(abs)`
-
-## 누적 모드 동작
-
-- 입력 오디오는 무음 포함 전체 수신/누적
-- `step_s`마다 누적 버퍼 전체를 재추론
-- 워밍업(`max_window_s - step_s`) 이전 결과는 publish하지 않음
-- 워밍업 완료 후 중간 문장 일관성 필터로 급격한 변화를 차단
-
-## 로그
-
-`ENABLE_LOGGING=true`일 때:
-
-- 성공 추론: `logs/<timestamp>.wav` + `logs/<timestamp>.txt`
-- 필터 실패: `logs/<timestamp>_FAIL.wav` + `logs/<timestamp>_FAIL.txt`
-- 실패 이력: `logs/filter_failures.log`
-
-## 디바이스 리스팅 (배포/개발 공용)
-
-마이크/카메라 디바이스 확인용 도구:
-
-- 콘솔: `device_lister.py`
-- UI: `device_lister_ui.py`
-- 통합 테스트/설정 UI: `deviceMngUI.py`
-
-개발 환경 실행:
-
-```bash
-uv run python device_lister.py
-uv run python device_lister_ui.py
-uv run python deviceMngUI.py
+```env
+ASRFLOW_STT_BACKEND=qwen_transformers
+ASRFLOW_STT_MODEL=Qwen/Qwen3-ASR-0.6B
+ASRFLOW_STT_MODEL_PATH=
+ASRFLOW_STT_DEVICE=auto
+ASRFLOW_STT_FP16=true
+ASRFLOW_STT_LANGUAGE=auto
+ASRFLOW_STT_TASK=transcribe
 ```
 
-배포 빌드:
+native stream 예제는 별도 키를 본다.
 
-```powershell
-.\scripts\build_device_lister.ps1 -Clean
-.\scripts\build_device_lister_ui.ps1 -Clean
+```env
+ASRFLOW_STREAM_MODEL=Qwen/Qwen3-ASR-0.6B
+ASRFLOW_STREAM_MODEL_PATH=
+ASRFLOW_STREAM_LANGUAGE=auto
+ASRFLOW_STREAM_CHUNK_SEC=2.0
+ASRFLOW_STREAM_SAMPLERATE=16000
 ```
 
-생성 결과:
-
-- `dist/device_lister/device_lister.exe`
-- `dist/device_lister_ui/device_lister_ui.exe`
-
-UI 버전에서는 카메라 path를 선택 후 `Copy Camera Path`로 클립보드에 복사할 수 있습니다.
+현재 native stream 경로는 기본 의존성 안에서 동작한다.

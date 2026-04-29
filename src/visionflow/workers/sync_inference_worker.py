@@ -4,7 +4,7 @@ import threading
 import time
 from typing import Optional, Protocol
 
-from visionflow.pipeline.bus import TopicBus
+from common.runtime.bus import TopicBus
 from visionflow.pipeline.packet import FramePacket
 
 

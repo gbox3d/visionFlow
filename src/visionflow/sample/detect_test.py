@@ -16,7 +16,7 @@ import threading
 
 import pygame
 
-from visionflow.pipeline.bus import TopicBus
+from common.runtime.bus import TopicBus
 from visionflow.sources.camera_source import CameraSource
 from visionflow.utils.image import cv_bgr_to_pygame_surface
 
@@ -128,7 +128,7 @@ class Application:
 
         # pygame setup (render only)
         pygame.init()
-        pygame.display.set_caption("VisionFlow - All Pipeline Tester")
+        pygame.display.set_caption("NeuroFlow - All Pipeline Tester")
 
         # 한글 폰트 설정
         font_path = "font/DungGeunMo.ttf"
@@ -405,7 +405,7 @@ class Application:
             pose_fps = float(pose_pkt.meta.get("infer_fps", 0.0))
 
         lines = [
-            f"VisionFlow All Pipeline Tester",
+            f"NeuroFlow All Pipeline Tester",
             f"CAM {meta.get('camera_id', '?')}  {meta.get('actual_width', 0)}x{meta.get('actual_height', 0)}",
             f"disp/cam = {disp_fps:.1f} / {cam_fps:.1f}",
             f"face/landmark/pose = {face_fps:.1f} / {landmark_fps:.1f} / {pose_fps:.1f}",
@@ -484,7 +484,7 @@ class Application:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="VisionFlow standard camera renderer"
+        description="NeuroFlow standard camera renderer"
     )
     parser.add_argument("--camera-id", type=int, default=0)
     parser.add_argument("--width", type=int, default=640)

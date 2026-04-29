@@ -1,228 +1,705 @@
-# VisionFlow
+# NeuroFlow
 
-Realtime vision pipeline (camera → processors → render)
+## 목차
 
-OpenCV 카메라 캡처, MediaPipe 추론, Pygame 렌더링을 **TopicBus** 기반 pub/sub 파이프라인으로 연결하는 프레임워크입니다.
+1. [최근 구현 변경](#최근-구현-변경)
+2. [이 문서를 처음 보는 사람을 위한 지침](#이-문서를-처음-보는-사람을-위한-지침)
+3. [아키텍처 개요](#아키텍처-개요)
+4. [설치](#설치)
+5. [PM2 통합 관리](#pm2-통합-관리)
+6. [Public Entry Points](#public-entry-points)
+   - [visionFlow](#visionflow)
+   - [voiceFlow](#voiceflow)
+   - [asrFlow](#asrflow)
+   - [ttsFlow](#ttsflow)
+7. [사용법 상세](#사용법-상세)
+   - [nf-vision-camhub (카메라 허브 서버)](#nf-vision-camhub-카메라-허브-서버)
+   - [nf-vision-camhub-client (카메라 클라이언트)](#nf-vision-camhub-client-카메라-클라이언트)
+   - [nf-asr-server (ASR 서버)](#nf-asr-server-asr-서버)
+   - [nf-tts-server (TTS 서버)](#nf-tts-server-tts-서버)
+   - [nf-tts-rest-server (TTS REST API)](#nf-tts-rest-server-tts-rest-api)
+   - [nf-tts-client (TTS 테스트 클라이언트)](#nf-tts-client-tts-테스트-클라이언트)
+   - [nf-voice-mic-client (마이크 클라이언트)](#nf-voice-mic-client-마이크-클라이언트)
+   - [nf-asr-chunk-realtime (Chunk ASR UI)](#nf-asr-chunk-realtime-chunk-asr-ui)
+   - [nf-audiomi-asr-chunk-realtime (AudioMi Chunk UI)](#nf-audiomi-asr-chunk-realtime-audiomi-chunk-ui)
+   - [nf-asr-stream-realtime (Native Streaming UI)](#nf-asr-stream-realtime-native-streaming-ui)
+   - [nf-vision (Vision 샘플 런처)](#nf-vision-vision-샘플-런처)
+   - [nf-vision-models-download (모델 다운로드)](#nf-vision-models-download-모델-다운로드)
+   - [nf-voice (Voice 샘플 런처)](#nf-voice-voice-샘플-런처)
+8. [ASR Runtime Split](#asr-runtime-split)
+9. [NFCP 프로토콜](#nfcp-프로토콜)
+10. [환경 변수](#환경-변수)
+11. [개발자 문서](#개발자-문서)
+12. [Layout](#layout)
 
-## Architecture
+---
 
+`NeuroFlow`는 vision, audio, ASR, TTS를 한 저장소에서 운영하는 멀티모달 런타임이다.
+
+## 최근 구현 변경
+
+### 구현사항
+
+- `SERVER_INFO(102)`를 추가해 NFCP ASR 서버의 `version`, `host`, `port`, `pid`, `uptime_ms`, `streaming`, `commands`를 별도 조회할 수 있게 했다.
+- `ASR_CLEAR_BUFFER(1003)`를 추가해 streaming processor의 버퍼/세션 상태를 서버에서 즉시 초기화할 수 있게 했다.
+- `nf-tts-server`와 `nf-tts-rest-server`를 추가해 한국어 TTS를 NFCP 또는 REST로 호출할 수 있게 했다. 기본은 CPU 품질 우선 `speecht5-ko`이며, Piper ONNX는 빠른 fallback으로 남겨둔다.
+- `QwenStreamingAsrProcessor`는 누적 오디오를 bounded queue로 관리하도록 바뀌었고, `ASRFLOW_STREAM_MAX_ACCUM_SAMPLES`로 상한을 설정할 수 있다.
+- 패키지 버전을 `0.2.1`로 올리고, README·프로토콜 문서·`sample.env`를 현재 구현과 맞도록 갱신했다.
+
+### 이전 대비 차이점
+
+| 항목 | 이전 | 현재 |
+| --- | --- | --- |
+| 서버 메타 조회 | `DESCRIBE` 응답에 의존 | `SERVER_INFO(102)`로 별도 조회하고 `DESCRIBE`도 같은 메타 기반으로 정리 |
+| 스트리밍 세션 정리 | `action=end` 뒤 잔존 상태가 남을 수 있음 | 종료 직후 `reset()`을 호출하고 필요 시 `ASR_CLEAR_BUFFER(1003)`로 강제 초기화 |
+| 누적 오디오 관리 | 전체 누적 배열을 계속 `concatenate` | 최대 샘플 수를 넘기면 오래된 샘플부터 제거하는 bounded queue |
+| 환경 설정 | stream 누적 상한 설정 없음 | `ASRFLOW_STREAM_MAX_ACCUM_SAMPLES` 추가 |
+
+## 이 문서를 처음 보는 사람을 위한 지침
+
+1. **설치**: `uv sync` → `uv run nf-vision-models-download` 순서로 실행한다.
+2. **환경 설정**: `sample.env`를 복사하여 프로젝트 루트에 `.env`로 배치한다.
+3. **프로토콜**: 내부 표준 서버 간 통신은 **NFCP TCP** 기반이다. REST/HTTP는 외부 앱/키오스크용 얇은 gateway로만 둔다.
+4. **구조 파악**: 코드 구조와 아키텍처는 [`_forAI/`](_forAI/) 디렉터리 문서를 먼저 읽는다.
+5. **새 서버 추가 시**: `common.protocols.nfcp`의 `read_frame`/`write_frame`을 사용하고, `PING`/`DESCRIBE` 핸들러를 반드시 포함한다. 참고 구현은 `AsrIngressServer`와 `CamHubServer`다.
+
+---
+
+## 아키텍처 개요
+
+```text
+common         -> 공용 contract, protocol (NFCP), runtime (TopicBus)
+visionflow     -> 카메라, MediaPipe 추론, camhub (영상 중계 서버)
+voiceFlow      -> 오디오 source, client, ingress server
+asrFlow        -> bootstrap, processor, worker, vendor, ASR handler
+ttsFlow        -> Korean TTS engine, NFCP handler, sample client
+neuroflow.app  -> composition root, app-level entry point
 ```
-CameraSource ──publish──▶ TopicBus ──subscribe──▶ Workers ──publish──▶ TopicBus
-                              ▲                                           │
-                              └─────────── Application (Render) ◀─────────┘
-```
 
-- **Main Thread** : Pygame 렌더링만 담당
-- **Camera Thread** : 프레임 캡처만 담당
-- **Inference Thread** : 모델 추론만 담당 (IMAGE/VIDEO 동기 또는 LIVE_STREAM 비동기)
-- **TopicBus** : 스레드 안전 pub/sub 메시지 버스, 버전 기반 구독
+NFCP ASR 서버는 `voiceFlow` transport와 `asrFlow` core를 `neuroflow.app.asr_server`에서 조립해 띄운다.
+NFCP TTS 서버는 `ttsFlow` core를 `neuroflow.app.tts_server`에서 조립해 띄운다.
+CamHub 서버는 `visionflow.camhub`에서 NFCP TCP로 카메라 프레임을 중계한다.
 
-## Install
+---
+
+## 설치
 
 ```bash
-# uv (권장)
 uv sync
-
-# pip
-pip install -e .
+uv run nf-vision-models-download
+uv run nf-tts-models-download  # Piper fallback을 쓸 때만 필요
 ```
 
-## Quick Start
+- Python `>=3.11` 기준
+- `.env`가 필요하면 `sample.env`를 복사하여 프로젝트 루트에 배치한다
 
-### 런처로 샘플 선택 실행
+
+---
+
+## Public Entry Points
+
+### visionFlow
+
+| 커맨드 | 역할 |
+| --- | --- |
+| `uv run nf-vision` | vision sample menu launcher |
+| `uv run nf-vision-models-download` | MediaPipe 기본 모델 다운로드 |
+| `uv run nf-vision-camhub` | 카메라 이미지 중계 허브 서버 (NFCP TCP) |
+| `uv run nf-vision-camhub-client` | 로컬 카메라 → camhub 전송 클라이언트 (NFCP TCP) |
+
+### voiceFlow
+
+| 커맨드 | 역할 |
+| --- | --- |
+| `uv run nf-voice` | voice source / device / sample app launcher |
+| `uv run nf-voice-mic-client` | 마이크 녹음 후 NFCP ASR ingress 서버로 batch 전송 |
+
+### asrFlow
+
+| 커맨드 | 역할 |
+| --- | --- |
+| `uv run nf-asr-server` | canonical NFCP ASR 서버 (batch + optional stream) |
+| `uv run nf-asr-chunk-realtime` | 로컬 마이크 chunk ASR 실험 UI |
+| `uv run nf-audiomi-asr-chunk-realtime` | audioMi accumulate chunk ASR 실험 UI |
+| `uv run nf-asr-stream-realtime` | Qwen native streaming 실험 UI |
+
+### ttsFlow
+
+| 커맨드 | 역할 |
+| --- | --- |
+| `uv run nf-tts-models-download` | Piper fallback용 한국어 ONNX 모델 다운로드 |
+| `uv run nf-tts-server` | canonical NFCP TTS 서버 |
+| `uv run nf-tts-rest-server` | 외부 앱/키오스크용 TTS REST API 서버 |
+| `uv run nf-tts-client "안녕하세요"` | TTS 서버 테스트 클라이언트 |
+
+---
+
+## 사용법 상세
+
+### nf-vision-camhub (카메라 허브 서버)
+
+여러 카메라 클라이언트가 JPEG 프레임을 고유한 이름(`name`)으로 보내면, 이름별로 최신 프레임을 인메모리에 유지한다. AI 클라이언트가 카메라 이름으로 요청하면 현재 프레임을 NFCP 응답으로 전송한다.
 
 ```bash
-uv run visionflow
+# 기본 실행 (0.0.0.0:26200)
+uv run nf-vision-camhub
+
+# 특정 주소/포트로 바인드
+uv run nf-vision-camhub --host 127.0.0.1 --port 8080
 ```
 
-번호를 입력하면 해당 샘플이 실행됩니다.
+CLI 인자:
 
-```
-==================================================
-  VisionFlow Sample Launcher
-==================================================
+| 옵션 | 타입 | 기본값 | 환경 변수 | 설명 |
+| --- | --- | --- | --- | --- |
+| `--host` | `str` | `0.0.0.0` | `NF_CAMHUB_HOST` | TCP 바인드 주소. `0.0.0.0`이면 모든 인터페이스에서 수신 |
+| `--port` | `int` | `26200` | `NF_CAMHUB_PORT` | TCP 리스닝 포트 |
 
-  [Camera]
-    1) camera.simple                  - 기본 카메라 뷰어
-    2) camera.dual_cam                - 듀얼 카메라
-    3) camera.list_cameras            - 카메라 디바이스 목록
-    4) camera.list_resolutions        - 카메라 해상도 목록
+NFCP 커맨드:
 
-  [Face Detection]
-    5) face_detection.simple          - 얼굴 검출
-    6) face_detection.simple_landmark - 얼굴 랜드마크
-    7) face_detection.transform_3d    - 3D 얼굴 변환
+| Command | Code | 방향 | 역할 |
+| --- | --- | --- | --- |
+| `VISION_UPLOAD_FRAME` | 5003 | camera → hub | JPEG 프레임 업로드. meta: `{name, width, height}`, data: JPEG bytes |
+| `VISION_GET_FRAME` | 5004 | AI → hub | 최신 프레임 조회. meta: `{name}` → 응답 data: JPEG bytes |
+| `VISION_LIST_CAMERAS` | 5005 | any → hub | 등록된 카메라 목록 + 메타데이터 |
+| `PING` | 99 | any → hub | 서비스 상태 확인 |
+| `DESCRIBE` | 101 | any → hub | 서비스 상세 정보 + 현재 카메라 목록 |
 
-  [Pose]
-    8) pose.simple                    - 포즈 감지
+### nf-vision-camhub-client (카메라 클라이언트)
 
-  [Full Pipeline]
-    9) detect_test                    - 전체 파이프라인 테스트
-
-    0) 종료
-```
-
-### 개별 스크립트 직접 실행
-
-`[project.scripts]`로 등록된 커맨드를 사용합니다.
+로컬 카메라에서 프레임을 캡처하여 camhub 서버로 NFCP `VISION_UPLOAD_FRAME`을 반복 전송한다. 시작 시 `PING`으로 서버 연결을 확인한 뒤, 지정된 FPS로 JPEG 인코딩 프레임을 계속 보낸다.
 
 ```bash
-# Camera
-uv run vf-camera-simple
-uv run vf-camera-simple --camera-id 0 --width 1280 --height 720
-uv run vf-camera-dual
-uv run vf-camera-list
-uv run vf-camera-resolutions --camera-id 0
+# 기본 실행 (cam0, camera index 0, 10fps)
+uv run nf-vision-camhub-client
 
-# Face Detection
-uv run vf-face-detect --running-mode LIVE_STREAM --min-score 0.6
-uv run vf-face-detect --running-mode IMAGE
-uv run vf-face-landmark
-uv run vf-face-3d
+# 카메라 이름과 인덱스 지정
+uv run nf-vision-camhub-client --name front-cam --camera-id 0
 
-# Pose
-uv run vf-pose --running-mode LIVE_STREAM
-uv run vf-pose --running-mode IMAGE
+# 두 번째 카메라를 다른 이름으로 (별도 터미널)
+uv run nf-vision-camhub-client --name side-cam --camera-id 1
 
-# Full Pipeline Test
-uv run vf-detect-test
+# FPS, 해상도, JPEG 품질 조절
+uv run nf-vision-camhub-client --name hd-cam --fps 15 --width 1280 --height 720 --quality 90
+
+# 원격 허브 서버에 연결
+uv run nf-vision-camhub-client --host 192.168.0.10 --port 26200 --name remote-cam
 ```
 
-## Project Structure
+CLI 인자:
 
-```
-src/visionflow/
-  __init__.py
-  main.py                  # 인터랙티브 샘플 런처
-  pipeline/
-    bus.py                 # TopicBus - 스레드 안전 pub/sub 메시지 버스
-    packet.py              # FramePacket 데이터 클래스
-  sources/
-    camera_source.py       # OpenCV 카메라 캡처 (자동 재연결)
-  processors/
-    face_detector.py       # FaceDetector (동기, IMAGE/VIDEO)
-    pose_landmarker.py     # PoseLandmarker (동기, IMAGE/VIDEO)
-  workers/
-    sync_inference_worker.py              # 동기 추론 워커
-    mp_face_detector_async_worker.py      # Face Detector (LIVE_STREAM)
-    mp_face_landmarker_async_worker.py    # Face Landmarker (LIVE_STREAM)
-    mp_pose_landmarker_async_worker.py    # Pose Landmarker (LIVE_STREAM)
-  utils/
-    draw_utils.py          # 렌더링 유틸 (DrawUtils, Colors)
-    image.py               # 이미지 변환 (cv2 <-> pygame)
-    face_geometry.py       # 얼굴 3D 기하 계산
-    etc.py                 # 기타 유틸 (resource_path 등)
-  sample/
-    detect_test.py         # 전체 파이프라인 테스트
-    camera/
-      simple.py            # 기본 카메라 뷰어
-      dual_cam.py          # 듀얼 카메라
-      list_cameras.py      # 카메라 디바이스 목록
-      list_resolutions.py  # 해상도 목록
-    face_detection/
-      simple.py            # 얼굴 검출
-      simple_landmark.py   # 얼굴 랜드마크
-      transform_3d.py      # 3D 변환
-    pose/
-      simple.py            # 포즈 감지
-```
+| 옵션 | 타입 | 기본값 | 환경 변수 | 설명 |
+| --- | --- | --- | --- | --- |
+| `--host` | `str` | `127.0.0.1` | `NF_CAMHUB_HOST` | camhub 서버 주소 |
+| `--port` | `int` | `26200` | `NF_CAMHUB_PORT` | camhub 서버 포트 |
+| `--name` | `str` | `cam0` | `NF_CAMHUB_CLIENT_NAME` | 카메라 식별 이름. hub에서 이 이름으로 프레임을 관리한다 |
+| `--camera-id` | `int` | `0` | `CAMERA_ID` | OpenCV 카메라 인덱스. `0`은 시스템 기본 카메라 |
+| `--fps` | `float` | `10` | `NF_CAMHUB_CLIENT_FPS` | 목표 전송 FPS. 실제 FPS는 카메라/네트워크에 따라 낮아질 수 있다 |
+| `--quality` | `int` | `80` | `NF_CAMHUB_CLIENT_QUALITY` | JPEG 인코딩 품질 (1-100). 높을수록 화질↑ 대역폭↑ |
+| `--width` | `int` | `640` | `CAMERA_RESOLUTION` | 캡처 요청 너비 (px) |
+| `--height` | `int` | `480` | `CAMERA_RESOLUTION` | 캡처 요청 높이 (px) |
 
-## Scripts Reference
-
-
-
-## Requirements
-
-- Python >= 3.11
-- MediaPipe >= 0.10.32
-- OpenCV >= 4.8
-- Pygame >= 2.5
-
-## voiceFlow ASR (miso_stt)
-
-`voiceFlow` ASR는 `miso_stt`를 벤더링해 3개 백엔드를 지원합니다.
-
-- `ct2`
-- `hf_generate`
-- `hf_pipeline`
-
-실행:
+일반적인 사용 흐름:
 
 ```bash
-uv run python -m voiceFlow.sample.asr_realtime
-uv run python -m voiceFlow.sample.audiomi_asr_realtime
+# 터미널 1: 허브 서버 시작
+uv run nf-vision-camhub
+
+# 터미널 2: 카메라 1 연결
+uv run nf-vision-camhub-client --name front-cam
+
+# 터미널 3: 카메라 2 연결
+uv run nf-vision-camhub-client --name side-cam --camera-id 1
+
+# 터미널 4: AI 클라이언트에서 프레임 조회 (Python 예시)
+# NFCP로 VISION_GET_FRAME(5004) 요청, meta: {"name": "front-cam"}
 ```
 
-UI에서 다음을 선택할 수 있습니다.
-- backend
-- model size
-- model path (optional)
-- accumulate step / max window (audiomi 샘플)
+### nf-asr-server (ASR 서버)
 
-모델 지정 우선순위:
-1. model path
-2. model name(alias/HF ID)
+NFCP TCP 기반 canonical ASR 서버. `voiceFlow` transport와 `asrFlow` core를 조립한다.
 
-주요 환경 변수:
-- `VOICEFLOW_STT_TEMPERATURE` (기본 `0.0`)
-- `VOICEFLOW_STT_CT2_VAD_FILTER` (기본 `false`)
-- `ENABLE_LOGGING` (`true`일 때만 `logs/` 저장)
+```bash
+# 기본 실행 (0.0.0.0:26100)
+uv run nf-asr-server
 
-`audiomi_asr_realtime` 누적 모드:
-- ingest/infer 스레드 분리로 수신과 추론 경로 분리
-- `step_s` 단위 청크 큐 누적 후 전체 버퍼 추론
-- `max_window_s` 초과 시 앞 청크 트림
-- 워밍업 진행률(`text/asr_status`)을 UI progress bar로 표시
-- 상태줄에 queue/infer 시간 표시
-- 모델명 + `cache root(abs)` 표시
-- 로깅 사용 시 추론 텍스트/오디오 쌍 저장(`logs/*.txt`, `logs/*.wav`)
+# env 파일 경로 지정
+uv run nf-asr-server --env ./my_config.env
 
-CUDA 정책:
-- PyTorch CUDA wheel 경로(`pytorch-cu128`)를 사용합니다.
-- `nvidia-cublas-cu12`, `nvidia-cudnn-cu12` 직접 의존은 제거했습니다.
+# 주소/포트 오버라이드
+uv run nf-asr-server --host 127.0.0.1 --port 30000
 
-운영 가이드:
-- 의존성/락 파일 반영 후 `uv sync`로 환경을 재동기화하세요.
-- 락 업데이트가 필요하면 `uv lock` 후 `uv sync`를 권장합니다.
+#pm2 통합 예시
+pm2 start bash --name nf-asr-server --cwd /home/miso/work/NeuroFlow -- -lc 'uv run nf-asr-server --port 21861'
+```
 
-HF LoRA 주의:
-- adapter-only 경로는 지원하지 않습니다.
-- 병합된 checkpoint 디렉토리를 model path로 지정하세요.
+CLI 인자:
 
-통합 데모(`main.py`, pygame) 해상도 튜닝:
+| 옵션 | 타입 | 기본값 | 환경 변수 | 설명 |
+| --- | --- | --- | --- | --- |
+| `--env` | `str` | `None` | - | env 파일 경로를 직접 지정. 생략 시 `.env` 자동 탐색 |
+| `--host` | `str` | `None` | `NF_ASR_SERVER_HOST` | TCP 바인드 주소. 생략 시 env 값 또는 `0.0.0.0` |
+| `--port` | `int` | `None` | `NF_ASR_SERVER_PORT` | TCP 리스닝 포트. 생략 시 env 값 또는 `26100` |
+
+NFCP 커맨드:
+
+| Command | Code | 설명 |
+| --- | --- | --- |
+| `PING` | 99 | 서비스 상태 확인 |
+| `DESCRIBE` | 101 | 서비스 상세 정보 (지원 커맨드, 모델, streaming 여부) |
+| `SERVER_INFO` | 102 | 버전/호스트/포트/uptime 등 서버 메타 조회 |
+| `ASR_TRANSCRIBE` | 1001 | batch 음성 인식. meta: `{audio_format, samplerate, channels}`, data: audio bytes |
+| `ASR_TRANSCRIBE_STREAM` | 1002 | native streaming. `NF_ASR_STREAM_ENABLED=true` 필요. meta `action`: `start`/`end`/생략(chunk) |
+| `ASR_CLEAR_BUFFER` | 1003 | 서버 내 스트리밍 버퍼/세션 상태 강제 초기화 |
+
+### nf-tts-server (TTS 서버)
+
+NFCP TCP 기반 한국어 TTS 서버. 기본 엔진은 `speecht5-ko`이며, 현재 GPU 여유 메모리를 보호하기 위해 CPU 품질 우선 실행을 기본값으로 둔다. 기존 Piper ONNX KSS 경로는 빠르지만 발음 품질 이슈가 있어 fallback으로만 둔다.
+
+```bash
+# Piper fallback을 쓸 때만 최초 1회 모델 다운로드
+uv run nf-tts-models-download
+
+# 기본 실행 (0.0.0.0:26120)
+uv run nf-tts-server
+
+# env 파일 경로 지정
+uv run nf-tts-server --env ./my_config.env
+
+# 주소/포트 오버라이드
+uv run nf-tts-server --host 127.0.0.1 --port 30020
+```
+
+CLI 인자:
+
+| 옵션 | 타입 | 기본값 | 환경 변수 | 설명 |
+| --- | --- | --- | --- | --- |
+| `--env` | `str` | `None` | - | env 파일 경로를 직접 지정. 생략 시 `.env` 자동 탐색 |
+| `--host` | `str` | `None` | `NF_TTS_SERVER_HOST` | TCP 바인드 주소. 생략 시 env 값 또는 `0.0.0.0` |
+| `--port` | `int` | `None` | `NF_TTS_SERVER_PORT` | TCP 리스닝 포트. 생략 시 env 값 또는 `26120` |
+| `--engine` | `str` | env/default | `NF_TTS_ENGINE` | `speecht5-ko`, `piper-ko`, smoke test용 `stub` |
+| `--model` | `path` | env/default | `NF_TTS_MODEL_PATH` | Piper ONNX 모델 경로 |
+| `--model-id` | `str` | env/default | `NF_TTS_MODEL_ID` | `speecht5-ko` Hugging Face 모델 id |
+| `--config` | `path` | env/default | `NF_TTS_CONFIG_PATH` | Piper ONNX config 경로 |
+
+NFCP 커맨드:
+
+| Command | Code | 설명 |
+| --- | --- | --- |
+| `PING` | 99 | 서비스 상태 확인 |
+| `DESCRIBE` | 101 | 서비스 상세 정보 (엔진, 모델, 지원 포맷) |
+| `SERVER_INFO` | 102 | 버전/호스트/포트/uptime 등 서버 메타 조회 |
+| `TTS_SYNTHESIZE` | 3001 | 텍스트 합성. meta `{text, audio_format, language, speed}`, 응답 data: WAV bytes |
+
+### nf-tts-rest-server (TTS REST API)
+
+키오스크 앱이나 웹 클라이언트가 쓰기 쉬운 HTTP JSON gateway다. 내부 엔진과 검증 로직은 `nf-tts-server`와 같은 `ttsFlow` service를 공유한다.
+
+```bash
+# Piper fallback을 쓸 때만 최초 1회 모델 다운로드
+uv run nf-tts-models-download
+
+# 기본 실행 (0.0.0.0:26121)
+uv run nf-tts-rest-server
+
+# 로컬 바인드
+uv run nf-tts-rest-server --host 127.0.0.1 --port 26121
+```
+
+엔드포인트:
+
+| Method | Path | 역할 |
+| --- | --- | --- |
+| `GET` | `/health` | 상태 확인 |
+| `GET` | `/describe` | 엔진/모델/기본값 조회 |
+| `POST` | `/tts` | JSON `{text, audio_format, language, speed}` -> `audio/wav` |
+
+요청 예:
+
+```bash
+curl -X POST http://127.0.0.1:26121/tts \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"안녕하세요. 안내를 시작합니다.","speed":1.0}' \
+  --output /tmp/neuroflow_tts.wav
+```
+
+### nf-tts-client (TTS 테스트 클라이언트)
+
+로컬 TTS 서버에 NFCP `TTS_SYNTHESIZE` 요청을 보내고 WAV 파일을 저장한다.
+
+```bash
+# 터미널 1: TTS 서버 시작
+uv run nf-tts-server
+
+# 터미널 2: WAV 생성 테스트
+uv run nf-tts-client "안녕하세요. 안내를 시작합니다." -o /tmp/neuroflow_tts.wav
+```
+
+### nf-voice-mic-client (마이크 클라이언트)
+
+로컬 마이크를 지정된 시간만큼 녹음한 뒤 NFCP `ASR_TRANSCRIBE` batch 요청을 보내고 결과를 출력한다. 시작 시 `PING`으로 서버 연결을 확인한다.
+
+```bash
+# 기본 실행 (127.0.0.1:26100, 4초 녹음)
+uv run nf-voice-mic-client
+
+# 전체 옵션 지정
+uv run nf-voice-mic-client --host 192.168.0.10 --port 26100 --duration 6 --samplerate 16000 --channels 1 --device 2
+
+# PING 건너뛰기
+uv run nf-voice-mic-client --skip-ping --duration 3
+```
+
+CLI 인자:
+
+| 옵션 | 타입 | 기본값 | 설명 |
+| --- | --- | --- | --- |
+| `--host` | `str` | `127.0.0.1` | ASR 서버 주소 |
+| `--port` | `int` | `26100` | ASR 서버 포트 |
+| `--duration` | `float` | `4.0` | 마이크 녹음 시간 (초) |
+| `--samplerate` | `int` | `16000` | 녹음 샘플레이트 (Hz) |
+| `--channels` | `int` | `1` | 오디오 채널 수 (1=모노, 2=스테레오) |
+| `--device` | `int` | `None` | sounddevice 입력 장치 인덱스. 생략 시 시스템 기본 입력 |
+| `--skip-ping` | flag | `false` | 설정 시 시작 PING을 건너뛴다 |
+
+점검 순서:
+
+```bash
+# 터미널 1: ASR 서버 시작
+uv run nf-asr-server
+
+# 터미널 2: 마이크 클라이언트로 테스트
+uv run nf-voice-mic-client --host 127.0.0.1 --port 26100 --duration 4
+```
+
+### nf-asr-chunk-realtime (Chunk ASR UI)
+
+로컬 마이크 기반 chunk 실험 UI. Whisper(`ct2`, `hf_generate`, `hf_pipeline`)와 Qwen ASR(`qwen_transformers`)를 시험한다. CLI 인자 없이 `.env`만으로 동작한다.
+
+```bash
+uv run nf-asr-chunk-realtime
+```
+
+관련 환경 변수:
+
+| 환경 변수 | 기본값 | 설명 |
+| --- | --- | --- |
+| `ASRFLOW_STT_BACKEND` | `qwen_transformers` | backend 선택: `ct2`, `hf_generate`, `hf_pipeline`, `qwen_transformers` |
+| `ASRFLOW_STT_MODEL` | `Qwen/Qwen3-ASR-0.6B` | HF model id 또는 alias |
+| `ASRFLOW_STT_CHUNK_SEC` | `3.0` | chunk 길이 (초). 짧으면 반응↑ 정확도↓ |
+| `ASRFLOW_STT_SAMPLERATE` | `16000` | 마이크 샘플레이트 |
+| `ASRFLOW_STT_DEVICE` | `auto` | 추론 디바이스: `auto`, `cuda`, `cpu` |
+| `ASRFLOW_STT_FP16` | `true` | FP16 추론 사용 여부 |
+| `ASRFLOW_STT_LANGUAGE` | `auto` | 언어 코드: `auto`, `ko`, `en` 등 |
+
+### nf-audiomi-asr-chunk-realtime (AudioMi Chunk UI)
+
+audioMi 입력 기반 accumulate chunk 실험 UI. 누적 buffer 전체를 다시 추론하면서 suffix만 UI에 반영한다. CLI 인자 없이 `.env`만으로 동작한다.
+
+```bash
+uv run nf-audiomi-asr-chunk-realtime
+```
+
+관련 환경 변수 (`ASRFLOW_STT_*` 외 추가분):
+
+| 환경 변수 | 기본값 | 설명 |
+| --- | --- | --- |
+| `AUDIOMI_HOST` | `127.0.0.1` | audioMi 서버 주소 |
+| `AUDIOMI_PORT` | `26070` | audioMi 서버 포트 |
+| `AUDIOMI_CHECKCODE` | `20250918` | audioMi 인증 코드 |
+| `ASR_STEP_S` | `1.5` | accumulate 추론 간격 (초) |
+| `ASR_MAX_WINDOW_S` | `25` | 최대 누적 윈도우 길이 (초). 초과 시 앞부분 버린다 |
+
+### nf-asr-stream-realtime (Native Streaming UI)
+
+로컬 마이크 기반 native streaming 실험 UI. 현재 canonical stream 경로는 `Qwen ASR + qwen-asr transformers backend`다. CLI 인자 없이 `.env`만으로 동작한다.
+
+```bash
+uv run nf-asr-stream-realtime
+```
+
+관련 환경 변수:
+
+| 환경 변수 | 기본값 | 설명 |
+| --- | --- | --- |
+| `ASRFLOW_STREAM_MODEL` | `Qwen/Qwen3-ASR-0.6B` | streaming용 HF model id |
+| `ASRFLOW_STREAM_LANGUAGE` | `auto` | 언어 코드 |
+| `ASRFLOW_STREAM_CHUNK_SEC` | `2.0` | 오디오 chunk 길이 (초) |
+| `ASRFLOW_STREAM_SAMPLERATE` | `16000` | 마이크 샘플레이트 |
+| `ASRFLOW_STREAM_MAX_NEW_TOKENS` | `512` | 디코딩 최대 토큰 수 |
+| `ASRFLOW_STREAM_UNFIXED_CHUNK_NUM` | `2` | 확정되지 않은 chunk 유지 수 |
+| `ASRFLOW_STREAM_UNFIXED_TOKEN_NUM` | `5` | 확정되지 않은 토큰 유지 수 |
+| `ASRFLOW_STREAM_MAX_ACCUM_SAMPLES` | `2000` | streaming 누적 오디오 큐 최대 샘플 수 (초과 시 오래된 샘플부터 제거) |
+
+### nf-vision (Vision 샘플 런처)
+
+vision 관련 sample을 메뉴로 선택하여 실행하는 런처. CLI 인자 없이 실행하면 대화형 메뉴가 나온다.
+
+```bash
+uv run nf-vision
+```
+
+메뉴 항목:
+
+| 번호 | 모듈 | 설명 |
+| --- | --- | --- |
+| 1 | `camera.simple` | 기본 카메라 뷰어 |
+| 2 | `camera.list_cameras` | 카메라 디바이스 목록 출력 |
+| 3 | `face_detection.simple` | 얼굴 검출 |
+| 4 | `pose.simple` | 포즈 감지 |
+| 5 | `detect_test` | 전체 파이프라인 테스트 |
+
+개별 sample 직접 실행:
+
+```bash
+uv run python -m visionflow.sample.camera.list_cameras
+uv run python -m visionflow.sample.camera.simple --camera-id 0 --width 1280 --height 720
+uv run python -m visionflow.sample.face_detection.simple --running-mode LIVE_STREAM --min-score 0.6
+uv run python -m visionflow.sample.pose.simple --running-mode LIVE_STREAM
+uv run python -m visionflow.sample.detect_test
+```
+
+### nf-vision-models-download (모델 다운로드)
+
+vision sample이 요구하는 MediaPipe 모델 파일을 `models/` 디렉터리에 다운로드한다.
+
+```bash
+# 전체 모델 다운로드
+uv run nf-vision-models-download
+
+# 모델 목록 확인
+uv run nf-vision-models-download --list
+
+# 강제 재다운로드
+uv run nf-vision-models-download --force
+
+# 특정 모델만 선택
+uv run nf-vision-models-download --only face-detector face-landmarker
+uv run nf-vision-models-download --only pose-full pose-lite
+```
+
+CLI 인자:
+
+| 옵션 | 타입 | 기본값 | 설명 |
+| --- | --- | --- | --- |
+| `--output-dir` | `path` | `./models` | 모델 파일 저장 디렉터리 |
+| `--only` | `str[]` | 전체 | 다운로드할 asset 키 선택. 가능한 값: `face-detector`, `face-landmarker`, `pose-full`, `pose-lite` |
+| `--force` | flag | `false` | 이미 존재하는 파일도 덮어쓴다 |
+| `--list` | flag | `false` | 다운로드 가능한 asset 키 목록을 출력하고 종료 |
+
+다운로드되는 파일:
+
+| Asset 키 | 파일명 | 설명 |
+| --- | --- | --- |
+| `face-detector` | `blaze_face_short_range.tflite` | MediaPipe Face Detector (short range) |
+| `face-landmarker` | `face_landmarker.task` | MediaPipe Face Landmarker |
+| `pose-full` | `pose_landmarker.task` | MediaPipe Pose Landmarker (full) |
+| `pose-lite` | `pose_landmarker_lite.task` | MediaPipe Pose Landmarker (lite) |
+
+### nf-voice (Voice 샘플 런처)
+
+voice source / device / sample app을 메뉴로 선택하여 실행하는 런처. CLI 인자 없이 대화형 메뉴로 동작한다.
+
+```bash
+uv run nf-voice
+```
+
+---
+
+## ASR Runtime Split
+
+### 1. Batch / Chunk
+
+```text
+MicrophoneSource or AudioMiSource
+  -> TopicBus("audio/raw")
+  -> AsrWorker / AccumulateAsrWorker
+  -> MisoSttAsrProcessor
+  -> TopicBus("text/asr")
+  -> UI or NFCP response
+```
+
+- 설정 키: `ASRFLOW_STT_*`
+- backend: `ct2`, `hf_generate`, `hf_pipeline`, `qwen_transformers`
+- `ASRFLOW_STT_MODEL_PATH`를 주면 로컬 모델 경로를 우선 사용
+
+### 2. Native Stream
+
+```text
+MicrophoneSource
+  -> TopicBus("audio/raw")
+  -> StreamingAsrWorker
+  -> QwenStreamingAsrProcessor
+  -> TopicBus("text/asr")
+  -> UI or NFCP stream response
+```
+
+- 설정 키: `ASRFLOW_STREAM_*`
+- canonical model family: `Qwen/Qwen3-ASR-0.6B`
+- `qwen_asr`의 streaming 로직을 transformers backend로 재현, `vLLM` 없이 동작
+
+---
+
+## NFCP 프로토콜
+
+모든 서버 간 통신은 `common.protocols.nfcp` 기반 TCP binary framing을 사용한다.
+
+```text
+[Header 64 bytes] [meta JSON] [data bytes]
+```
+
+모든 서버는 아래 공통 커맨드를 지원한다:
+
+| Command | Code | 역할 |
+| --- | --- | --- |
+| `PING` | 99 | 서비스 상태 확인 |
+| `DESCRIBE` | 101 | 서비스 상세 정보 |
+| `SERVER_INFO` | 102 | 버전/호스트/포트/uptime 등 서버 메타 조회 |
+
+서비스별 커맨드:
+
+| Service | Command | Code | 역할 |
+| --- | --- | --- | --- |
+| ASR | `ASR_TRANSCRIBE` | 1001 | batch 음성 인식 |
+| ASR | `ASR_TRANSCRIBE_STREAM` | 1002 | native streaming 음성 인식 |
+| ASR | `ASR_CLEAR_BUFFER` | 1003 | streaming buffer/session 상태 초기화 |
+| TTS | `TTS_SYNTHESIZE` | 3001 | 텍스트 음성 합성. 응답 data는 WAV bytes |
+| Vision | `VISION_UPLOAD_FRAME` | 5003 | 카메라 프레임 업로드 |
+| Vision | `VISION_GET_FRAME` | 5004 | 최신 프레임 조회 |
+| Vision | `VISION_LIST_CAMERAS` | 5005 | 카메라 목록 |
+
+새 서버를 추가할 때는 `AsrIngressServer` 또는 `CamHubServer`의 패턴을 따른다:
+- `_dispatch` → `_handle_client` → `run` 구조
+- `PING`/`DESCRIBE` 핸들러 기본 포함
+- 내부 표준 서버는 asyncio TCP + NFCP로 구현한다
+- 외부 앱 연동이 필요한 경우 REST gateway를 별도 entry point로 둔다
+
+---
+
+## 환경 변수
+
+`sample.env`를 복사하여 `.env`로 사용한다. 주요 설정:
+
+### chunk / batch 계열 (`ASRFLOW_STT_*`)
 
 ```env
-# 단일 설정 (권장): WxH 포맷
-CAMERA_RESOLUTION=1280x720
-
-# detection counts
-MAX_FACE=1
-MAX_POSE=1
+ASRFLOW_STT_BACKEND=qwen_transformers    # ct2 | hf_generate | hf_pipeline | qwen_transformers
+ASRFLOW_STT_MODEL=Qwen/Qwen3-ASR-0.6B   # HF model id or alias
+ASRFLOW_STT_MODEL_PATH=                  # 로컬 모델 경로 (optional)
+ASRFLOW_STT_DEVICE=auto                  # auto | cuda | cpu
+ASRFLOW_STT_FP16=true
+ASRFLOW_STT_LANGUAGE=auto                # auto | ko | en | ...
+ASRFLOW_STT_TASK=transcribe              # transcribe | translate
+ASRFLOW_STT_CHUNK_SEC=3.0
+ASRFLOW_STT_SAMPLERATE=16000
 ```
 
-`face + pose` 동시 추론에서는 해상도를 높일수록 FPS가 크게 떨어질 수 있습니다.
+### native stream 계열 (`ASRFLOW_STREAM_*`)
 
-소스 점검 + `.env` 편집 유틸 (`deviceMngUI.py`):
-
-```bash
-uv run python deviceMngUI.py
+```env
+ASRFLOW_STREAM_MODEL=Qwen/Qwen3-ASR-0.6B
+ASRFLOW_STREAM_LANGUAGE=auto
+ASRFLOW_STREAM_CHUNK_SEC=2.0
+ASRFLOW_STREAM_SAMPLERATE=16000
+ASRFLOW_STREAM_MAX_NEW_TOKENS=512
+ASRFLOW_STREAM_MAX_ACCUM_SAMPLES=2000
+NF_ASR_STREAM_ENABLED=true
 ```
 
-카메라 입력 프리뷰, 마이크 RMS 게이지, `.env` 키/값 편집/저장을 한 UI에서 처리합니다.
-`DEVICE_PATH`, `CAMERA_ID`, `CAMERA_RESOLUTION`, `MIC_DEVICE`는 다이얼로그 선택기로 지정할 수 있습니다.
-`CAMERA_RESOLUTION`은 현재 선택된 카메라에서 프로빙된 지원 해상도 목록으로만 선택됩니다.
+### 서버 / 네트워크
 
-백엔드 가이드:
-- `hf_generate`, `hf_pipeline`: LoRA/파인튜닝 확장 대비 권장
-- `ct2`: 빠른 추론에 유리, GPU 초기화 실패 시 CPU fallback이 자동 적용될 수 있음
+```env
+NF_ASR_SERVER_HOST=0.0.0.0
+NF_ASR_SERVER_PORT=26100
+NF_TTS_SERVER_HOST=0.0.0.0
+NF_TTS_SERVER_PORT=26120
+NF_TTS_REST_HOST=0.0.0.0
+NF_TTS_REST_PORT=26121
+NF_CAMHUB_HOST=0.0.0.0
+NF_CAMHUB_PORT=26200
+AUDIOMI_HOST=127.0.0.1
+AUDIOMI_PORT=26070
+```
 
-## Keyboard Controls (detect_test)
+### camhub 클라이언트
 
-| Key | Action |
-|-----|--------|
-| `1` | Face Detection 토글 |
-| `2` | Face Landmark 토글 |
-| `3` | Pose Landmark 토글 |
-| `4` | 카메라 전환 (0 <-> 1) |
-| `H` | 도움말 토글 |
-| `ESC` | 종료 |
+```env
+NF_CAMHUB_CLIENT_NAME=cam0
+NF_CAMHUB_CLIENT_FPS=10
+NF_CAMHUB_CLIENT_QUALITY=80
+```
+
+### TTS 계열 (`NF_TTS_*`)
+
+```env
+NF_TTS_ENGINE=speecht5-ko
+NF_TTS_MODEL_ID=ahnhs2k/speecht5-korean
+NF_TTS_MODEL_PATH=models/piper-kss-korean.onnx
+NF_TTS_CONFIG_PATH=models/piper-kss-korean.onnx.json
+NF_TTS_DEVICE=cpu
+NF_TTS_SPEED=1.0
+NF_TTS_MAX_CHARS=500
+```
+
+### 카메라 / 디바이스
+
+```env
+CAMERA_ID=0
+CAMERA_RESOLUTION=640x480
+CAMERA_USE_DSHOW=true
+MIC_DEVICE=0
+MIC_SAMPLERATE=16000
+```
+
+---
+
+## 개발자 문서
+
+Unity/키오스크 연동을 개발할 때는 [`_forAI/developer_promise_system.md`](_forAI/developer_promise_system.md)를 먼저 본다.
+
+세부 예제는 문서가 커지지 않도록 분리했다.
+
+| 문서 | 내용 |
+| --- | --- |
+| [`_forAI/unity_nfcp_tcp_guide.md`](_forAI/unity_nfcp_tcp_guide.md) | `nf-asr-server`, `nf-tts-server` TCP/NFCP 프로토콜과 Unity C# 예제 |
+| [`_forAI/unity_tts_rest_guide.md`](_forAI/unity_tts_rest_guide.md) | `nf-tts-rest-server` REST API와 Unity `UnityWebRequest` 예제 |
+
+---
+
+## Layout
+
+```text
+src/
+  common/
+    contracts/        # packet, gateway contract
+    protocols/        # NFCP binary protocol
+    runtime/          # TopicBus, audio codec
+    tools/            # model download 등
+  neuroflow/
+    app/              # composition root (asr_server, chunk/stream UI)
+  visionflow/
+    camhub/           # CamHubServer, FrameHub, camera client
+    processors/       # face detector, pose landmarker
+    sample/           # camera, face detection, pose sample
+    sources/          # CameraSource
+    workers/          # async vision workers
+  voiceFlow/
+    gateways/         # AsrIngressServer (NFCP TCP)
+    sample/           # microphone client
+    sources/          # microphone, audioMi source
+    utils/
+  asrFlow/
+    bootstrap.py
+    processors/       # MisoSttAsr, QwenStreamingAsr
+    services/         # NFCP ASR handler
+    workers/          # chunk, accumulate, streaming worker
+    vendors/          # whisper, qwen_asr runtime
+    utils/
+  ttsFlow/
+    engines/          # SpeechT5 Korean, Piper Korean fallback, stub engine
+    gateways/         # TtsServer (NFCP TCP)
+    services/         # NFCP TTS handler
+    sample/           # NFCP TTS client
+```
+
+상세 구조는 [`_forAI/architecture.md`](_forAI/architecture.md), 현재 인벤토리는 [`_forAI/inventory.md`](_forAI/inventory.md)를 보면 된다.

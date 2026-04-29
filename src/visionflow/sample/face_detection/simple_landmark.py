@@ -29,7 +29,7 @@ import time
 
 import pygame
 
-from visionflow.pipeline.bus import TopicBus
+from common.runtime.bus import TopicBus
 from visionflow.sources.camera_source import CameraSource
 from visionflow.utils.image import cv_bgr_to_pygame_surface
 
@@ -127,7 +127,7 @@ class Application:
         )
 
         pygame.init()
-        pygame.display.set_caption("VisionFlow - Face Detection + Landmark")
+        pygame.display.set_caption("NeuroFlow - Face Detection + Landmark")
 
         self.font = pygame.font.SysFont("Consolas", 18)
         self.small = pygame.font.SysFont("Consolas", 14)
@@ -314,7 +314,7 @@ class Application:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="VisionFlow face detection + landmark sample"
+        description="NeuroFlow face detection + landmark sample"
     )
 
     # 카메라 설정

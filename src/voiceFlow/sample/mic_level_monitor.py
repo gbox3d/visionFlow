@@ -28,7 +28,7 @@ import numpy as np
 import sounddevice as sd
 from dotenv import load_dotenv
 
-from PySide6.QtCore import Qt, QTimer, Signal, QObject
+from PySide6.QtCore import Qt, Signal, QObject
 from PySide6.QtGui import QColor, QPainter, QFont, QPen, QBrush, QLinearGradient
 from PySide6.QtWidgets import (
     QApplication,
@@ -40,11 +40,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from visionflow.pipeline.bus import TopicBus
+from common.runtime.bus import TopicBus
 from voiceFlow.sources.microphone_source import MicrophoneSource
-from voiceFlow.pipeline.packet import AudioPacket
 from voiceFlow.utils.audio_device import resolve_mic_device_from_camera_path
-from voiceFlow.utils.env import env_str_any
+from asrFlow.utils.env import env_str_any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 load_dotenv(PROJECT_ROOT / ".env", override=False)

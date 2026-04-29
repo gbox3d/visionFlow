@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
 
 from cv2_enumerate_cameras import enumerate_cameras
 
-from visionflow.pipeline.bus import TopicBus
+from common.runtime.bus import TopicBus
 from visionflow.pipeline.packet import FramePacket
 from visionflow.sources.camera_source import CameraSource
 

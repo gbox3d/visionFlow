@@ -22,7 +22,7 @@ import numpy as np
 import pygame
 import cv2
 
-from visionflow.pipeline.bus import TopicBus
+from common.runtime.bus import TopicBus
 from visionflow.sources.camera_source import CameraSource
 from visionflow.utils.image import cv_bgr_to_pygame_surface
 
@@ -72,7 +72,7 @@ class Application:
         )
 
         pygame.init()
-        pygame.display.set_caption("VisionFlow - 3D Face Transform")
+        pygame.display.set_caption("NeuroFlow - 3D Face Transform")
         self.font = pygame.font.SysFont("Consolas", 18)
         self.big_font = pygame.font.SysFont("Consolas", 24, bold=True)
 

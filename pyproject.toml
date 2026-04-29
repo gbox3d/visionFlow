@@ -4,27 +4,34 @@ build-backend = "hatchling.build"
 
 [project]
 name = "NeuroFlow"
-version = "0.1.0"
-description = "Realtime vision pipeline (camera → processors → render)"
+version = "0.2.1"
+description = "Multimodal runtime with canonical NFCP ASR server, voice ingress, and vision samples"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "accelerate>=1.0.0",
     "cv2-enumerate-cameras>=1.3.3",
+    "fastapi>=0.110.0",
     "librosa>=0.11.0",
     "mediapipe>=0.10.32",
     "numpy>=1.26,<3",
     "opencv-python>=4.8",
+    "piper-plus-g2p[ko]>=0.2.0",
+    "piper-tts>=1.4.2",
     "psutil>=7.2.2",
     "pygame>=2.5",
+    "python-mecab-ko>=1.3.7",
     "pyside6>=6.10.2",
     "python-dotenv>=1.2.1",
+    "qwen-asr>=0.0.6",
     "scipy>=1.11.0",
     "soundfile>=0.13.1",
     "sounddevice>=0.4.6",
     "faster-whisper>=1.0.0",
     "torch>=2.4.0",
     "transformers>=4.46.0",
+    "uvicorn[standard]>=0.29.0",
+    "huggingface-hub>=0.24.0",
 ]
 
 [[tool.uv.index]]
@@ -36,10 +43,25 @@ explicit = true
 torch = { index = "pytorch-cu128" }
 
 [project.scripts]
-visionflow = "visionflow.main:main"
+nf-vision = "visionflow.main:main"
+nf-vision-models-download = "common.tools.download_mediapipe_models:main"
+nf-tts-models-download = "common.tools.download_tts_models:main"
+nf-asr-server = "neuroflow.app.asr_server:main"
+nf-tts-server = "neuroflow.app.tts_server:main"
+nf-tts-rest-server = "neuroflow.app.tts_rest_server:main"
+nf-tts-client = "ttsFlow.sample.nfcp_tts_client:main"
+
+nf-voice = "voiceFlow.main:main"
+nf-voice-mic-client = "voiceFlow.sample.microphone_client:main"
+nf-asr-chunk-realtime = "neuroflow.app.asr_chunk_realtime:main"
+nf-audiomi-asr-chunk-realtime = "neuroflow.app.audiomi_asr_chunk_realtime:main"
+nf-asr-stream-realtime = "neuroflow.app.asr_stream_realtime:main"
+nf-vision-camhub = "visionflow.camhub.main:main"
+nf-vision-camhub-client = "visionflow.camhub.camera_client:main"
+
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/visionflow", "src/voiceFlow"]
+packages = ["src/common", "src/asrFlow", "src/neuroflow", "src/visionflow", "src/voiceFlow", "src/ttsFlow"]
 
 [dependency-groups]
 dev = [
